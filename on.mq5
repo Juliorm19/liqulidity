@@ -93,13 +93,13 @@ int OnInit()
     trade.SetTypeFilling(ORDER_FILLING_FOK);
 
     //--- Obtener handle del indicador ZigZag
-    g_zigzag_handle = iCustom(_Symbol, _Period, "ZigZag", InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
+    g_zigzag_handle = iCustom(_Symbol, PERIOD_M5, "Examples/ZigZag", InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
     if(g_zigzag_handle == INVALID_HANDLE)
     {
         printf("Error al crear el handle del indicador ZigZag");
         return(INIT_FAILED);
     }
-
+   
     //--- Crear panel de estado
     CreateStatusPanel();
     UpdateStatusPanel("Iniciando...");
@@ -476,7 +476,8 @@ void HandleStateTradeManagement(datetime ny_time)
     // Revisar si hay posiciones abiertas con nuestro Magic Number
     for(int i = total_positions - 1; i >= 0; i--)
     {
-        if(PositionSelectByIndex(i) && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
+        ulong position_ticket1 = PositionGetTicket(i);
+        if(PositionSelectByTicket(position_ticket1) && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
         {
             active_trade = true;
             break;
@@ -676,27 +677,27 @@ void DrawFibo(string name_prefix, datetime time1, double price1, datetime time2,
     ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
     
     // Añadir niveles personalizados
-    ObjectSetInteger(0, name, OBJPROP_FIBOLEVELS, 5); // Número de niveles que vamos a definir
+    ObjectSetInteger(0, name, OBJPROP_LEVELS, 5); // Número de niveles que vamos a definir
     
     // Nivel 0: Entrada
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 0, InpFiboEntryLevel/100.0);
-    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 0, "Entry " + DoubleToString(InpFiboEntryLevel, 1));
+    ObjectSetDouble(0, name, OBJPROP_LEVELVALUE, 0, InpFiboEntryLevel/100.0);
+    ObjectSetString(0, name, OBJPROP_TEXT, 0, "Entry " + DoubleToString(InpFiboEntryLevel, 1));
     
     // Nivel 1: Stop Loss
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 1, InpFiboSLLevel/100.0);
-    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 1, "SL " + DoubleToString(InpFiboSLLevel, 1));
+    ObjectSetDouble(0, name, OBJPROP_LEVELVALUE, 1, InpFiboSLLevel/100.0);
+    ObjectSetString(0, name, OBJPROP_TEXT, 1, "SL " + DoubleToString(InpFiboSLLevel, 1));
 
     // Nivel 2: Take Profit 1
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 2, InpFiboTP1Level/100.0);
-    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 2, "TP1 " + DoubleToString(InpFiboTP1Level, 1));
-
+    ObjectSetDouble(0, name, OBJPROP_LEVELVALUE, 2, InpFiboTP1Level/100.0);
+    ObjectSetString(0, name, OBJPROP_TEXT, 2, "TP1 " + DoubleToString(InpFiboTP1Level, 1));
+   
     // Nivel 3: Take Profit 2
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 3, InpFiboTP2Level/100.0);
-    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 3, "TP2 " + DoubleToString(InpFiboTP2Level, 1));
+    ObjectSetDouble(0, name, OBJPROP_LEVELVALUE, 3, InpFiboTP2Level/100.0);
+    ObjectSetString(0, name, OBJPROP_TEXT, 3, "TP2 " + DoubleToString(InpFiboTP2Level, 1));
     
     // Nivel 4: Nivel 0%
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 4, 0.0);
-    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 4, "0.0");
+    ObjectSetDouble(0, name, OBJPROP_LEVELVALUE, 4, 0.0);
+    ObjectSetString(0, name, OBJPROP_TEXT, 4, "0.0");
 }
 
 //+------------------------------------------------------------------+
