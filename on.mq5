@@ -1,371 +1,662 @@
 //+------------------------------------------------------------------+
-//|                                      EstrategiaLiquidezCHOCH.mq5 |
-//|                                  Creado por Asistente de OpenAI  |
-//|                                                                  |
+//|                                       EstrategiaLiquidezNY.mq5 |
+//|                                  Creado para el usuario de GPT |
+//|                                             https://chat.openai.com |
 //+------------------------------------------------------------------+
-#property copyright "Creado por Asistente de OpenAI"
-#property link      "https://www.openai.com"
-#property version   "2.2" // Versión corregida
-#property description "EA basado en barrido de liquidez, CHOCH y Fibonacci."
+#property copyright "Creado para el usuario de GPT"
+#property link      "https://chat.openai.com"
+#property version   "1.00"
 
 #include <Trade\Trade.mqh>
 
-//--- Parámetros de entrada del EA
-input group           "Parámetros de Trading"
-input ulong           MagicNumber = 123456;      // Número Mágico para identificar las órdenes
-input double          RiskPercent = 1.0;         // Porcentaje de riesgo por operación
+//--- Inputs del Usuario
+input group "Configuración de Tiempo (Hora de Nueva York)"
+input string   InpSessionStart      = "02:00"; // Inicio del rango de Asia
+input string   InpSessionEnd        = "07:15"; // Fin del rango de Asia
+input string   InpTradingStart      = "07:45"; // Inicio de la ventana de trading
+input string   InpTradingEnd        = "11:00"; // Fin de la ventana de trading
+input int      InpNYTimeOffset      = -5;      // Desplazamiento horario de NY respecto a GMT (ej. -5 para EST, -4 para EDT)
 
-input group           "Ajustes de Pivots"
-input int             PivotLeft = 5;             // Barras a la izquierda para el pivot
-input int             PivotRight = 5;            // Barras a la derecha para el pivot
+input group "Gestión de Riesgo"
+input double   InpRiskPercent       = 1.0;     // Porcentaje de riesgo por operación
+input ulong    InpMagicNumber       = 12345;   // Número Mágico para las operaciones
 
-input group           "Ajustes de Tiempo"
-input int             NY_Time_Offset_From_Server = -7; // Diferencia horaria: NY vs Servidor del Broker (ej. -7 para IC Markets)
+input group "Parámetros de Estructura (ZigZag)"
+input int      InpZigZagDepth       = 12;
+input int      InpZigZagDeviation   = 5;
+input int      InpZigZagBackstep    = 3;
 
-//--- Instancia de la clase de trading
-CTrade trade;
+input group "Configuración de Fibonacci"
+input double   InpFiboEntryLevel    = 61.8;    // Nivel de entrada de Fibonacci
+input double   InpFiboSLLevel       = 100.0;   // Nivel de Stop Loss de Fibonacci
+input double   InpFiboTP1Level      = -27.0;   // Nivel de Take Profit 1
+input double   InpFiboTP2Level      = -64.0;   // Nivel de Take Profit 2
 
-//--- Enumeración para el estado del Bias
-enum ENUM_BIAS
+input group "Visualización"
+input color    InpSessionLineColor  = clrGray;
+input color    InpPivotLabelColor   = clrWhite;
+input ENUM_BASE_CORNER InpPanelCorner = CORNER_TOP_LEFT;
+
+
+//--- Enumeraciones para estados y dirección
+enum ENUM_STATE
 {
-   BIAS_NINGUNO,
-   BIAS_ALCISTA,
-   BIAS_BAJISTA,
-   BIAS_FINALIZADO
+    STATE_WAIT_SESSION,      // 1. Esperando que se forme el rango de Asia
+    STATE_WAIT_BIAS,         // 2. Esperando la toma de liquidez para definir el BIAS
+    STATE_WAIT_BOS,          // 3. Esperando un Break of Structure (BOS)
+    STATE_WAIT_CHOCH,        // 4. Esperando un Change of Character (CHOCH)
+    STATE_WAIT_RETRACEMENT,  // 5. Esperando el retroceso a Fibonacci
+    STATE_TRADE_MANAGEMENT,  // 6. Orden colocada, gestionando la operación
+    STATE_DAY_END            // Fin del día, esperando al siguiente
 };
 
-//--- Variables Globales de Estado
-ENUM_BIAS    g_daily_bias = BIAS_NINGUNO;
-bool         g_choch_created = false;
-bool         g_tp1_hit = false;
-string       g_bot_status = "Iniciando...";
+enum ENUM_BIAS
+{
+    BIAS_NONE,
+    BIAS_BULLISH, // Toma de liquidez por debajo -> Dirección alcista
+    BIAS_BEARISH  // Toma de liquidez por encima -> Dirección bajista
+};
 
-double       g_range_high = 0.0;
-double       g_range_low = 0.0;
-datetime     g_range_finalized_time = 0;
+//--- Variables Globales
+CTrade      trade;
+ENUM_STATE  g_currentState = STATE_WAIT_SESSION;
+ENUM_BIAS   g_bias = BIAS_NONE;
+int         g_zigzag_handle;
 
-double       g_last_pivot_high = 0.0;
-double       g_last_pivot_low = 0.0;
-datetime     g_last_pivot_high_time = 0;
-datetime     g_last_pivot_low_time = 0;
+// Variables de la sesión
+datetime    g_session_start_time;
+datetime    g_session_end_time;
+double      g_session_high;
+double      g_session_low;
+bool        g_session_marked = false;
 
-double       g_prev_pivot_high = 0.0;
-double       g_prev_pivot_low = 0.0;
+// Variables de la estructura
+double      g_pivots[4]; // Almacenará los últimos 4 pivots de precio
+datetime    g_pivot_times[4]; // Almacenará los tiempos de los últimos 4 pivots
 
-double       g_fibo_p1 = 0.0;
-double       g_fibo_p2 = 0.0;
+// Variables de Fibonacci y orden
+double      g_fibo_anchor_1;
+double      g_fibo_anchor_2;
+long        g_pending_order_ticket = 0;
 
-double       g_entry_price = 0.0;
-double       g_sl_price = 0.0;
-double       g_tp1_price = 0.0;
-double       g_tp2_price = 0.0;
-
-int          g_last_known_day = -1;
+// Panel de estado
+string      g_panel_name = "StatusPanel";
+string      g_label_name = "StatusLabel";
 
 //+------------------------------------------------------------------+
-//| Función de inicialización del experto                          |
+//| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   trade.SetExpertMagicNumber(MagicNumber);
-   trade.SetMarginMode();
-   trade.SetTypeFillingBySymbol(_Symbol);
-   
-   Print("EA 'EstrategiaLiquidezCHOCH' iniciado. Magic Number: ", MagicNumber);
-   Print("Ajuste de tiempo NY vs Servidor: ", NY_Time_Offset_From_Server, " horas.");
-   
-   return(INIT_SUCCEEDED);
+    //--- Inicializar objeto de trading
+    trade.SetExpertMagicNumber(InpMagicNumber);
+    trade.SetTypeFillingBySymbol(Symbol());
+
+    //--- Obtener handle del indicador ZigZag
+    g_zigzag_handle = iZigZag(Symbol(), Period(), InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
+    if(g_zigzag_handle == INVALID_HANDLE)
+    {
+        printf("Error al crear el handle del indicador ZigZag");
+        return(INIT_FAILED);
+    }
+
+    //--- Crear panel de estado
+    CreateStatusPanel();
+    UpdateStatusPanel("Iniciando...");
+
+    //--- Resetear variables diarias al inicio
+    ResetDailyVariables();
+    
+    return(INIT_SUCCEEDED);
 }
 
 //+------------------------------------------------------------------+
-//| Resetea las variables de estado para un nuevo día                |
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+    //--- Limpiar objetos del gráfico
+    ObjectDelete(0, g_panel_name);
+    ObjectDelete(0, g_label_name);
+    ObjectsDeleteAll(0, "Session_");
+    ObjectsDeleteAll(0, "Pivot_");
+    ObjectsDeleteAll(0, "FiboEntry_");
+}
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+    //--- Solo ejecutar en una nueva barra para eficiencia
+    static datetime last_bar_time = 0;
+    datetime current_bar_time = (datetime)SeriesInfoInteger(Symbol(), Period(), SERIES_LASTBAR_TIME);
+    if(last_bar_time == current_bar_time)
+        return;
+    last_bar_time = current_bar_time;
+
+    //--- Obtener hora actual de NY
+    datetime ny_time = GetNYTime(TimeCurrent());
+    
+    //--- Resetear al inicio de un nuevo día (antes de la sesión)
+    if(TimeHour(ny_time) == 0 && TimeMinute(ny_time) == 0 && g_currentState != STATE_WAIT_SESSION)
+    {
+        ResetDailyVariables();
+    }
+
+    //--- Máquina de estados
+    switch(g_currentState)
+    {
+        case STATE_WAIT_SESSION:
+            HandleStateWaitSession(ny_time);
+            break;
+        case STATE_WAIT_BIAS:
+            HandleStateWaitBias(ny_time);
+            break;
+        case STATE_WAIT_BOS:
+            HandleStateWaitBos(ny_time);
+            break;
+        case STATE_WAIT_CHOCH:
+            HandleStateWaitChoch(ny_time);
+            break;
+        case STATE_WAIT_RETRACEMENT:
+            HandleStateWaitRetracement(ny_time);
+            break;
+        case STATE_TRADE_MANAGEMENT:
+            HandleStateTradeManagement(ny_time);
+            break;
+        case STATE_DAY_END:
+            // No hacer nada hasta el reseteo del día siguiente
+            break;
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 1. Maneja la espera y marcado de la sesión de Asia               |
+//+------------------------------------------------------------------+
+void HandleStateWaitSession(datetime ny_time)
+{
+    UpdateStatusPanel("Waiting Session Range");
+    
+    if(g_session_marked) return;
+
+    // Si ya pasó la hora de fin de sesión, la marcamos
+    if(ny_time >= StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionEnd))
+    {
+        datetime session_start_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionStart));
+        datetime session_end_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionEnd));
+
+        int start_bar = iBarShift(Symbol(), Period(), session_start_server_time);
+        int end_bar = iBarShift(Symbol(), Period(), session_end_server_time);
+
+        if(start_bar < 0 || end_bar < 0) return;
+
+        double highs[], lows[];
+        CopyHigh(Symbol(), Period(), end_bar, start_bar - end_bar + 1, highs);
+        CopyLow(Symbol(), Period(), end_bar, start_bar - end_bar + 1, lows);
+
+        g_session_high = highs[ArrayMaximum(highs)];
+        g_session_low = lows[ArrayMinimum(lows)];
+        
+        // Dibujar líneas en el gráfico
+        DrawLine("Session_High", session_start_server_time, g_session_high, TimeCurrent() + 3600*12, g_session_high, InpSessionLineColor, STYLE_DOT);
+        DrawLine("Session_Low", session_start_server_time, g_session_low, TimeCurrent() + 3600*12, g_session_low, InpSessionLineColor, STYLE_DOT);
+        
+        g_session_marked = true;
+        g_currentState = STATE_WAIT_BIAS;
+        printf("Sesión marcada. High: %f, Low: %f", g_session_high, g_session_low);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 2. Espera la toma de liquidez para definir el BIAS               |
+//+------------------------------------------------------------------+
+void HandleStateWaitBias(datetime ny_time)
+{
+    UpdateStatusPanel("Waiting Bias");
+
+    // Verificar si estamos dentro de la ventana de trading
+    if(ny_time < StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingStart)) return;
+    
+    // Si se pasa la ventana de trading, fin del día
+    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    {
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Trading Window Closed");
+        return;
+    }
+
+    MqlRates current_bar;
+    CopyRates(Symbol(), Period(), 0, 1, current_bar);
+
+    // Toma de liquidez por encima -> BIAS BAJISTA
+    if(current_bar.high > g_session_high)
+    {
+        g_bias = BIAS_BEARISH;
+        g_currentState = STATE_WAIT_BOS;
+        printf("Liquidez tomada por encima. BIAS: BAJISTA");
+    }
+    // Toma de liquidez por debajo -> BIAS ALCISTA
+    else if(current_bar.low < g_session_low)
+    {
+        g_bias = BIAS_BULLISH;
+        g_currentState = STATE_WAIT_BOS;
+        printf("Liquidez tomada por debajo. BIAS: ALCISTA");
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 3. Espera un Break of Structure (BOS)                            |
+//+------------------------------------------------------------------+
+void HandleStateWaitBos(datetime ny_time)
+{
+    UpdateStatusPanel("Bias: " + EnumToString(g_bias) + " | Waiting BOS");
+
+    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    {
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Trading Window Closed");
+        return;
+    }
+
+    if(FindPivots(4))
+    {
+        // BIAS ALCISTA: Buscamos un BOS alcista (un Higher High)
+        // Secuencia: Low -> High -> Higher High
+        if(g_bias == BIAS_BULLISH && g_pivots[0] > g_pivots[2] && g_pivots[1] < g_pivots[3])
+        {
+            CreatePivotLabel(g_pivot_times[3], g_pivots[3], "L");
+            CreatePivotLabel(g_pivot_times[2], g_pivots[2], "H");
+            CreatePivotLabel(g_pivot_times[1], g_pivots[1], "L"); // Este es el low que no debe romperse
+            CreatePivotLabel(g_pivot_times[0], g_pivots[0], "HH");
+            g_currentState = STATE_WAIT_CHOCH;
+            printf("BOS Alcista detectado. Esperando CHOCH Bajista.");
+        }
+        // BIAS BAJISTA: Buscamos un BOS bajista (un Lower Low)
+        // Secuencia: High -> Low -> Lower Low
+        else if(g_bias == BIAS_BEARISH && g_pivots[0] < g_pivots[2] && g_pivots[1] > g_pivots[3])
+        {
+            CreatePivotLabel(g_pivot_times[3], g_pivots[3], "H");
+            CreatePivotLabel(g_pivot_times[2], g_pivots[2], "L");
+            CreatePivotLabel(g_pivot_times[1], g_pivots[1], "H"); // Este es el high que no debe romperse
+            CreatePivotLabel(g_pivot_times[0], g_pivots[0], "LL");
+            g_currentState = STATE_WAIT_CHOCH;
+            printf("BOS Bajista detectado. Esperando CHOCH Alcista.");
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 4. Espera un Change of Character (CHOCH)                         |
+//+------------------------------------------------------------------+
+void HandleStateWaitChoch(datetime ny_time)
+{
+    UpdateStatusPanel("BOS Created | Waiting CHOCH");
+
+    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    {
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Trading Window Closed");
+        return;
+    }
+
+    if(FindPivots(5)) // Necesitamos un pivot más para el CHOCH
+    {
+        // Después de un BOS Alcista (L-H-HH), buscamos un CHOCH Bajista (un Low más bajo que el último Low)
+        if(g_bias == BIAS_BULLISH && g_pivots[0] < g_pivots[2]) // g_pivots[2] es el último Low (el punto 'L' antes del 'HH')
+        {
+            // El CHOCH es bajista, pero la entrada será alcista (es un retroceso)
+            // La secuencia es: L(3) -> H(2) -> HH(1) -> LL(0) (CHOCH)
+            // El Fibo se traza desde el inicio del movimiento que rompió (HH) hasta el nuevo low (LL)
+            g_fibo_anchor_1 = g_pivots[1]; // El HH
+            g_fibo_anchor_2 = g_pivots[0]; // El nuevo LL
+            CreatePivotLabel(g_pivot_times[0], g_pivots[0], "LL");
+            g_currentState = STATE_WAIT_RETRACEMENT;
+            printf("CHOCH Bajista detectado. Preparando entrada ALCISTA.");
+        }
+        // Después de un BOS Bajista (H-L-LL), buscamos un CHOCH Alcista (un High más alto que el último High)
+        else if(g_bias == BIAS_BEARISH && g_pivots[0] > g_pivots[2]) // g_pivots[2] es el último High (el punto 'H' antes del 'LL')
+        {
+            // El CHOCH es alcista, pero la entrada será bajista
+            // La secuencia es: H(3) -> L(2) -> LL(1) -> HH(0) (CHOCH)
+            // El Fibo se traza desde el inicio del movimiento que rompió (LL) hasta el nuevo high (HH)
+            g_fibo_anchor_1 = g_pivots[1]; // El LL
+            g_fibo_anchor_2 = g_pivots[0]; // El nuevo HH
+            CreatePivotLabel(g_pivot_times[0], g_pivots[0], "HH");
+            g_currentState = STATE_WAIT_RETRACEMENT;
+            printf("CHOCH Alcista detectado. Preparando entrada BAJISTA.");
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 5. Espera el retroceso a Fibonacci y coloca la orden             |
+//+------------------------------------------------------------------+
+void HandleStateWaitRetracement(datetime ny_time)
+{
+    UpdateStatusPanel("CHOCH Created | Waiting Retracement");
+
+    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    {
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Trading Window Closed");
+        return;
+    }
+
+    // Calcular niveles de Fibo
+    double range = MathAbs(g_fibo_anchor_1 - g_fibo_anchor_2);
+    double entry_price, sl_price, tp1_price, tp2_price;
+    
+    // Entrada ALCISTA (Buy Limit)
+    if(g_bias == BIAS_BULLISH)
+    {
+        entry_price = g_fibo_anchor_1 - (range * (InpFiboEntryLevel / 100.0));
+        sl_price = g_fibo_anchor_1 - (range * (InpFiboSLLevel / 100.0));
+        tp1_price = g_fibo_anchor_1 - (range * (InpFiboTP1Level / 100.0));
+        tp2_price = g_fibo_anchor_1 - (range * (InpFiboTP2Level / 100.0));
+        
+        // No colocar orden si el precio ya pasó el nivel de entrada
+        if(SymbolInfoDouble(Symbol(), SYMBOL_LOW) < entry_price)
+        {
+            g_currentState = STATE_DAY_END;
+            UpdateStatusPanel("Entry Missed. Price too low.");
+            return;
+        }
+
+        double stop_loss_pips = (entry_price - sl_price) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        double lot_size = CalculateLotSize(stop_loss_pips);
+        
+        if(lot_size > 0)
+        {
+            // Colocar 2 órdenes pendientes, cada una con la mitad del lotaje
+            trade.BuyLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp1_price, 0, 0, "TP1");
+            trade.BuyLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp2_price, 0, 0, "TP2");
+            
+            if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
+            {
+                g_pending_order_ticket = trade.ResultOrder();
+                g_currentState = STATE_TRADE_MANAGEMENT;
+                DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
+                printf("Órdenes Buy Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
+            }
+        }
+    }
+    // Entrada BAJISTA (Sell Limit)
+    else if(g_bias == BIAS_BEARISH)
+    {
+        entry_price = g_fibo_anchor_1 + (range * (InpFiboEntryLevel / 100.0));
+        sl_price = g_fibo_anchor_1 + (range * (InpFiboSLLevel / 100.0));
+        tp1_price = g_fibo_anchor_1 + (range * (InpFiboTP1Level / 100.0));
+        tp2_price = g_fibo_anchor_1 + (range * (InpFiboTP2Level / 100.0));
+
+        // No colocar orden si el precio ya pasó el nivel de entrada
+        if(SymbolInfoDouble(Symbol(), SYMBOL_HIGH) > entry_price)
+        {
+            g_currentState = STATE_DAY_END;
+            UpdateStatusPanel("Entry Missed. Price too high.");
+            return;
+        }
+
+        double stop_loss_pips = (sl_price - entry_price) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        double lot_size = CalculateLotSize(stop_loss_pips);
+
+        if(lot_size > 0)
+        {
+            // Colocar 2 órdenes pendientes
+            trade.SellLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp1_price, 0, 0, "TP1");
+            trade.SellLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp2_price, 0, 0, "TP2");
+
+            if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
+            {
+                g_pending_order_ticket = trade.ResultOrder();
+                g_currentState = STATE_TRADE_MANAGEMENT;
+                DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
+                printf("Órdenes Sell Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 6. Gestiona la operación una vez colocada                        |
+//+------------------------------------------------------------------+
+void HandleStateTradeManagement(datetime ny_time)
+{
+    UpdateStatusPanel("Position Open / Pending");
+
+    int total_positions = PositionsTotal();
+    int total_orders = OrdersTotal();
+    bool active_trade = false;
+
+    // Revisar si hay posiciones abiertas con nuestro Magic Number
+    for(int i = total_positions - 1; i >= 0; i--)
+    {
+        if(PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
+        {
+            active_trade = true;
+            break;
+        }
+    }
+    
+    // Revisar si hay órdenes pendientes con nuestro Magic Number
+    if(!active_trade)
+    {
+        for(int i = total_orders - 1; i >= 0; i--)
+        {
+            if(OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
+            {
+                active_trade = true;
+                break;
+            }
+        }
+    }
+
+    // Si ya no hay órdenes ni posiciones, el ciclo del día terminó
+    if(!active_trade)
+    {
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Trade Cycle Finished");
+        printf("El ciclo de trading ha finalizado para hoy.");
+    }
+    
+    // Si la ventana de trading se cierra y la orden pendiente no se activó, la cancelamos
+    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd) && total_positions == 0 && total_orders > 0)
+    {
+        // Cancelar todas las órdenes pendientes de este EA
+        for(int i = total_orders - 1; i >= 0; i--)
+        {
+            ulong ticket = OrderGetTicket(i);
+            if(OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
+            {
+                trade.OrderDelete(ticket);
+            }
+        }
+        g_currentState = STATE_DAY_END;
+        UpdateStatusPanel("Pending Order Cancelled");
+        printf("Orden pendiente cancelada por fin de ventana de trading.");
+    }
+}
+
+
+//+------------------------------------------------------------------+
+//|                       FUNCIONES AUXILIARES                       |
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Resetea las variables para un nuevo día de trading               |
 //+------------------------------------------------------------------+
 void ResetDailyVariables()
 {
-   Print("--- Nuevo Día de Trading ---");
-   g_daily_bias = BIAS_NINGUNO;
-   g_choch_created = false;
-   g_tp1_hit = false;
-   g_bot_status = "Esperando Sesión";
-
-   g_range_high = 0.0;
-   g_range_low = 0.0;
-   g_range_finalized_time = 0;
-
-   g_last_pivot_high = 0.0;
-   g_last_pivot_low = 0.0;
-   g_prev_pivot_high = 0.0;
-   g_prev_pivot_low = 0.0;
-   g_last_pivot_high_time = 0;
-   g_last_pivot_low_time = 0;
-
-   g_fibo_p1 = 0.0;
-   g_fibo_p2 = 0.0;
-   g_entry_price = 0.0;
-   g_sl_price = 0.0;
-   g_tp1_price = 0.0;
-   g_tp2_price = 0.0;
+    g_currentState = STATE_WAIT_SESSION;
+    g_bias = BIAS_NONE;
+    g_session_high = 0;
+    g_session_low = 0;
+    g_session_marked = false;
+    g_pending_order_ticket = 0;
+    ArrayInitialize(g_pivots, 0);
+    ArrayInitialize(g_pivot_times, 0);
+    
+    // Limpiar objetos del gráfico del día anterior
+    ObjectsDeleteAll(0, "Session_");
+    ObjectsDeleteAll(0, "Pivot_");
+    ObjectsDeleteAll(0, "FiboEntry_");
+    
+    printf("Variables diarias reseteadas. Esperando nueva sesión.");
 }
 
 //+------------------------------------------------------------------+
-//| Obtiene la hora actual en la zona horaria de Nueva York          |
+//| Convierte la hora del servidor a la hora de Nueva York           |
 //+------------------------------------------------------------------+
-MqlDateTime GetNYTime()
+datetime GetNYTime(datetime server_time)
 {
-   MqlDateTime ny_time;
-   long server_time = TimeCurrent() + (NY_Time_Offset_From_Server * 3600);
-   TimeToStruct(server_time, ny_time);
-   return ny_time;
+    long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
+    long ny_gmt_offset = InpNYTimeOffset * 3600;
+    return server_time - server_gmt_offset + ny_gmt_offset;
+}
+
+//+------------------------------------------------------------------+
+//| Convierte la hora de Nueva York a la hora del servidor           |
+//+------------------------------------------------------------------+
+datetime GetServerTimeFromNY(datetime ny_time)
+{
+    long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
+    long ny_gmt_offset = InpNYTimeOffset * 3600;
+    return ny_time + server_gmt_offset - ny_gmt_offset;
+}
+
+//+------------------------------------------------------------------+
+//| Busca los últimos N pivots del ZigZag                            |
+//+------------------------------------------------------------------+
+bool FindPivots(int count)
+{
+    double zigzag_buffer[];
+    ArraySetAsSeries(zigzag_buffer, true);
+    
+    if(CopyBuffer(g_zigzag_handle, 0, 0, 200, zigzag_buffer) <= 0)
+        return false;
+
+    int pivots_found = 0;
+    MqlRates rates[];
+    ArraySetAsSeries(rates, true);
+    CopyRates(Symbol(), Period(), 0, 200, rates);
+
+    for(int i = 1; i < 200 && pivots_found < count; i++)
+    {
+        if(zigzag_buffer[i] > 0)
+        {
+            g_pivots[pivots_found] = zigzag_buffer[i];
+            g_pivot_times[pivots_found] = rates[i].time;
+            pivots_found++;
+        }
+    }
+    
+    return (pivots_found >= count);
 }
 
 //+------------------------------------------------------------------+
 //| Calcula el tamaño del lote basado en el riesgo                   |
 //+------------------------------------------------------------------+
-double CalculateLotSize(double entry_price, double sl_price)
+double CalculateLotSize(double stop_loss_pips)
 {
-   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   double risk_amount = account_balance * (RiskPercent / 100.0);
-   double sl_points = MathAbs(entry_price - sl_price) / _Point;
+    if(stop_loss_pips <= 0) return 0.0;
 
-   if(sl_points == 0) return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double risk_amount = account_balance * (InpRiskPercent / 100.0);
+    
+    MqlTick last_tick;
+    SymbolInfoTick(Symbol(), last_tick);
+    
+    double tick_value = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+    double lot_size = risk_amount / (stop_loss_pips * tick_value);
+    
+    // Normalizar y verificar límites de lotaje
+    double min_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+    double max_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
+    double lot_step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
 
-   double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   
-   if(tick_size == 0) return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   
-   double value_per_point = tick_value / tick_size;
-   double lot_size = risk_amount / (sl_points * value_per_point);
-   
-   double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   lot_size = NormalizeDouble(lot_size, 2);
-   lot_size = MathFloor(lot_size / volume_step) * volume_step;
+    lot_size = MathFloor(lot_size / lot_step) * lot_step;
 
-   double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   
-   if(lot_size < min_lot) lot_size = min_lot;
-   if(lot_size > max_lot) lot_size = max_lot;
+    if(lot_size < min_lot) lot_size = min_lot;
+    if(lot_size > max_lot) lot_size = max_lot;
 
-   return lot_size;
+    return lot_size;
 }
 
 //+------------------------------------------------------------------+
-//| Busca pivots y comprueba la condición de CHOCH                   |
+//| Dibuja una línea en el gráfico                                   |
 //+------------------------------------------------------------------+
-void FindPivotsAndCheckCHOCH()
+void DrawLine(string name, datetime time1, double price1, datetime time2, double price2, color clr, ENUM_LINE_STYLE style)
 {
-   MqlRates rates[];
-   int bars_to_copy = PivotLeft + PivotRight + 50;
-   if(CopyRates(_Symbol, _Period, 0, bars_to_copy, rates) < bars_to_copy)
-   {
-      Print("No hay suficientes datos para calcular pivots.");
-      return;
-   }
-   
-   ArraySetAsSeries(rates, true);
-
-   for(int i = PivotRight; i < bars_to_copy - PivotLeft; i++)
-   {
-      // CORRECCIÓN: Copiar manualmente los datos a un array de double
-      double high_window[PivotLeft + PivotRight + 1];
-      for(int j = 0; j < PivotLeft + PivotRight + 1; j++)
-      {
-         high_window[j] = rates[i - PivotRight + j].high;
-      }
-      
-      if(rates[i].high == high_window[ArrayMaximum(high_window)])
-      {
-         if(rates[i].time != g_last_pivot_high_time)
-         {
-            g_prev_pivot_high = g_last_pivot_high;
-            g_last_pivot_high = rates[i].high;
-            g_last_pivot_high_time = rates[i].time;
-         }
-      }
-      
-      // CORRECCIÓN: Copiar manualmente los datos a un array de double
-      double low_window[PivotLeft + PivotRight + 1];
-      for(int j = 0; j < PivotLeft + PivotRight + 1; j++)
-      {
-         low_window[j] = rates[i - PivotRight + j].low;
-      }
-
-      if(rates[i].low == low_window[ArrayMinimum(low_window)])
-      {
-         if(rates[i].time != g_last_pivot_low_time)
-         {
-            g_prev_pivot_low = g_last_pivot_low;
-            g_last_pivot_low = rates[i].low;
-            g_last_pivot_low_time = rates[i].time;
-         }
-      }
-   }
-
-   if(g_daily_bias == BIAS_ALCISTA && g_last_pivot_high > g_prev_pivot_high && g_last_pivot_high_time > g_last_pivot_low_time && g_prev_pivot_high > 0)
-   {
-      g_choch_created = true;
-      g_fibo_p1 = g_last_pivot_low;
-      g_fibo_p2 = g_last_pivot_high;
-      Print("CHOCH Alcista Creado. Fibo desde ", g_fibo_p1, " hasta ", g_fibo_p2);
-   }
-   else if(g_daily_bias == BIAS_BAJISTA && g_last_pivot_low < g_prev_pivot_low && g_last_pivot_low_time > g_last_pivot_high_time && g_prev_pivot_low > 0)
-   {
-      g_choch_created = true;
-      g_fibo_p1 = g_last_pivot_high;
-      g_fibo_p2 = g_last_pivot_low;
-      Print("CHOCH Bajista Creado. Fibo desde ", g_fibo_p1, " hasta ", g_fibo_p2);
-   }
+    ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, true);
 }
 
 //+------------------------------------------------------------------+
-//| Gestiona el cierre parcial en TP1 y mueve SL a Breakeven         |
+//| Crea una etiqueta de texto para los pivots (H, L, HH, LL)        |
 //+------------------------------------------------------------------+
-void ManagePartialTakeProfit()
+void CreatePivotLabel(datetime time, double price, string text)
 {
-   if(g_tp1_hit || PositionSelect(_Symbol) == false) return;
-   
-   if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) return;
-
-   double current_price = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double position_volume = PositionGetDouble(POSITION_VOLUME);
-   double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
-
-   bool tp1_crossed = false;
-   if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY && current_price >= g_tp1_price)
-   {
-      tp1_crossed = true;
-   }
-   else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL && current_price <= g_tp1_price)
-   {
-      tp1_crossed = true;
-   }
-
-   if(tp1_crossed)
-   {
-      double volume_to_close = NormalizeDouble(position_volume / 2.0, 2);
-      if(trade.PositionClosePartial(_Symbol, volume_to_close))
-      {
-         Print("TP1 alcanzado. Cerrando 50% de la posición.");
-         if(trade.PositionModify(_Symbol, entry_price, PositionGetDouble(POSITION_TP)))
-         {
-            Print("SL movido a Breakeven.");
-         }
-         g_tp1_hit = true;
-      }
-   }
+    string name = "Pivot_" + TimeToString(time);
+    ObjectCreate(0, name, OBJ_TEXT, 0, time, price);
+    ObjectSetString(0, name, OBJPROP_TEXT, text);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, InpPivotLabelColor);
+    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
+    
+    // Ajustar posición para que no se solape con la vela
+    bool is_high = (text == "H" || text == "HH");
+    ObjectSetInteger(0, name, OBJPROP_ANCHOR, is_high ? ANCHOR_BOTTOM : ANCHOR_TOP);
+    ObjectSetDouble(0, name, OBJPROP_PRICE, is_high ? price + SymbolInfoInteger(Symbol(), SYMBOL_SPREAD) * _Point : price - SymbolInfoInteger(Symbol(), SYMBOL_SPREAD) * _Point);
 }
 
-
 //+------------------------------------------------------------------+
-//| Función de tick del experto                                    |
+//| Dibuja el objeto Fibonacci en el gráfico                         |
 //+------------------------------------------------------------------+
-void OnTick()
+void DrawFibo(string name_prefix, datetime time1, double price1, datetime time2, double price2)
 {
-   MqlDateTime ny_time = GetNYTime();
-   
-   if(g_last_known_day != ny_time.day)
-   {
-      ResetDailyVariables();
-      g_last_known_day = ny_time.day;
-   }
-   
-   MqlRates rates[1];
-   if(CopyRates(_Symbol, _Period, 0, 1, rates) < 1) return;
-   double latest_high = rates[0].high;
-   double latest_low = rates[0].low;
+    string name = name_prefix + TimeToString(TimeCurrent());
+    ObjectCreate(0, name, OBJ_FIBO, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clrGold);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+    
+    // Añadir niveles personalizados si es necesario
+    ObjectSetInteger(0, name, OBJPROP_FIBOLEVELS, 5); // Número de niveles
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 0, InpFiboEntryLevel/100.0);
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 1, InpFiboSLLevel/100.0);
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 2, InpFiboTP1Level/100.0);
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 3, InpFiboTP2Level/100.0);
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 4, 0.0); // Nivel 0
+}
 
-   if(ny_time.hour >= 2 && (ny_time.hour < 7 || (ny_time.hour == 7 && ny_time.min <= 15)))
-   {
-      g_bot_status = "Definiendo Rango";
-      if(g_range_high == 0.0 || latest_high > g_range_high) g_range_high = latest_high;
-      if(g_range_low == 0.0 || latest_low < g_range_low) g_range_low = latest_low;
-   }
-   else if(g_range_high > 0 && g_range_finalized_time == 0)
-   {
-      g_range_finalized_time = TimeCurrent();
-      Print("Rango definido: High=", g_range_high, ", Low=", g_range_low);
-   }
+//+------------------------------------------------------------------+
+//| Crea y actualiza el panel de estado en el gráfico                |
+//+------------------------------------------------------------------+
+void CreateStatusPanel()
+{
+    ObjectCreate(0, g_panel_name, OBJ_LABEL, 0, 0, 0);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_CORNER, InpPanelCorner);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_XDISTANCE, 10);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_YDISTANCE, 15);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_BGCOLOR, clrBlack);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
 
-   bool in_killzone = (ny_time.hour > 7 || (ny_time.hour == 7 && ny_time.min >= 45)) && ny_time.hour < 11;
+    ObjectCreate(0, g_label_name, OBJ_LABEL, 0, 0, 0);
+    ObjectSetInteger(0, g_label_name, OBJPROP_CORNER, InpPanelCorner);
+    ObjectSetInteger(0, g_label_name, OBJPROP_XDISTANCE, 15);
+    ObjectSetInteger(0, g_label_name, OBJPROP_YDISTANCE, 20);
+}
 
-   if(ny_time.hour >= 11 && g_daily_bias != BIAS_FINALIZADO)
-   {
-      if(PositionsTotal() == 0)
-      {
-         g_bot_status = "Sesión Finalizada";
-         g_daily_bias = BIAS_FINALIZADO;
-         trade.OrderDelete(0, true);
-         Print("Fin de sesión. Setup del día cancelado.");
-      }
-   }
-
-   if(in_killzone && g_daily_bias != BIAS_FINALIZADO && g_range_high > 0)
-   {
-      if(g_daily_bias == BIAS_NINGUNO)
-      {
-         g_bot_status = "Esperando Bias";
-         if(latest_high > g_range_high)
-         {
-            g_daily_bias = BIAS_BAJISTA;
-            g_bot_status = "Bias: Bajista";
-            Print("Toma de liquidez en el HIGH. Bias del día: BAJISTA");
-         }
-         else if(latest_low < g_range_low)
-         {
-            g_daily_bias = BIAS_ALCISTA;
-            g_bot_status = "Bias: Alcista";
-            Print("Toma de liquidez en el LOW. Bias del día: ALCISTA");
-         }
-      }
-
-      if((g_daily_bias == BIAS_ALCISTA || g_daily_bias == BIAS_BAJISTA) && !g_choch_created)
-      {
-         FindPivotsAndCheckCHOCH();
-      }
-
-      if(g_choch_created && g_entry_price == 0.0)
-      {
-         g_bot_status = "Esperando Retroceso";
-         double fibo_range = MathAbs(g_fibo_p2 - g_fibo_p1);
-         
-         if(g_daily_bias == BIAS_ALCISTA)
-         {
-            g_entry_price = g_fibo_p1 + fibo_range * 0.618;
-            g_sl_price = g_fibo_p1;
-            g_tp1_price = g_fibo_p2 + fibo_range * 0.27;
-            g_tp2_price = g_fibo_p2 + fibo_range * 0.64;
-         }
-         else if(g_daily_bias == BIAS_BAJISTA)
-         {
-            g_entry_price = g_fibo_p1 - fibo_range * 0.618;
-            g_sl_price = g_fibo_p1;
-            g_tp1_price = g_fibo_p2 - fibo_range * 0.27;
-            g_tp2_price = g_fibo_p2 - fibo_range * 0.64;
-         }
-         
-         Print("Niveles calculados: Entrada=", g_entry_price, ", SL=", g_sl_price, ", TP1=", g_tp1_price, ", TP2=", g_tp2_price);
-         
-         double lot = CalculateLotSize(g_entry_price, g_sl_price);
-         if(lot > 0)
-         {
-            if(g_daily_bias == BIAS_ALCISTA)
-            {
-               trade.BuyLimit(lot, g_entry_price, _Symbol, g_sl_price, g_tp2_price, ORDER_TIME_GTC, 0, "BOT Liquidez");
-            }
-            else if(g_daily_bias == BIAS_BAJISTA)
-            {
-               trade.SellLimit(lot, g_entry_price, _Symbol, g_sl_price, g_tp2_price, ORDER_TIME_GTC, 0, "BOT Liquidez");
-            }
-            g_bot_status = "Orden Pendiente";
-            g_daily_bias = BIAS_FINALIZADO;
-         }
-      }
-   }
-   
-   if(PositionsTotal() > 0)
-   {
-      ManagePartialTakeProfit();
-   }
+void UpdateStatusPanel(string status_text)
+{
+    string text = "EA Status: " + status_text;
+    ObjectSetString(0, g_label_name, OBJPROP_TEXT, text);
+    ObjectSetInteger(0, g_label_name, OBJPROP_COLOR, clrWhite);
+    
+    // Ajustar el tamaño del fondo
+    ObjectSetString(0, g_panel_name, OBJPROP_TEXT, " ");
+    ObjectSetInteger(0, g_panel_name, OBJPROP_XSIZE, 250);
+    ObjectSetInteger(0, g_panel_name, OBJPROP_YSIZE, 20);
 }
 //+------------------------------------------------------------------+
