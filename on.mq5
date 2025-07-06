@@ -3,9 +3,9 @@
 //|                                  Creado por Asistente de OpenAI  |
 //|                                                                  |
 //+------------------------------------------------------------------+
-#property copyright "Creado por Julio Rosario"
-#property link      "https://www.jrcores.com"
-#property version   "2.1"
+#property copyright "Creado por Asistente de OpenAI"
+#property link      "https://www.openai.com"
+#property version   "2.2" // Versión corregida
 #property description "EA basado en barrido de liquidez, CHOCH y Fibonacci."
 
 #include <Trade\Trade.mqh>
@@ -129,17 +129,18 @@ double CalculateLotSize(double entry_price, double sl_price)
 
    if(sl_points == 0) return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
 
-   // Calcular el valor del tick y el tamaño del lote
    double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double lot_size = (risk_amount / sl_points) / (tick_value / tick_size);
    
-   // Normalizar el lote según las reglas del símbolo
+   if(tick_size == 0) return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   
+   double value_per_point = tick_value / tick_size;
+   double lot_size = risk_amount / (sl_points * value_per_point);
+   
    double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    lot_size = NormalizeDouble(lot_size, 2);
    lot_size = MathFloor(lot_size / volume_step) * volume_step;
 
-   // Asegurarse de que el lote esté dentro de los límites
    double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    
@@ -164,12 +165,15 @@ void FindPivotsAndCheckCHOCH()
    
    ArraySetAsSeries(rates, true);
 
-   // Buscar los últimos pivots
    for(int i = PivotRight; i < bars_to_copy - PivotLeft; i++)
    {
-      // Pivot High
-      double high_window[];
-      ArrayCopy(high_window, rates, i - PivotRight, PivotLeft + PivotRight + 1, "high");
+      // CORRECCIÓN: Copiar manualmente los datos a un array de double
+      double high_window[PivotLeft + PivotRight + 1];
+      for(int j = 0; j < PivotLeft + PivotRight + 1; j++)
+      {
+         high_window[j] = rates[i - PivotRight + j].high;
+      }
+      
       if(rates[i].high == high_window[ArrayMaximum(high_window)])
       {
          if(rates[i].time != g_last_pivot_high_time)
@@ -180,9 +184,13 @@ void FindPivotsAndCheckCHOCH()
          }
       }
       
-      // Pivot Low
-      double low_window[];
-      ArrayCopy(low_window, rates, i - PivotRight, PivotLeft + PivotRight + 1, "low");
+      // CORRECCIÓN: Copiar manualmente los datos a un array de double
+      double low_window[PivotLeft + PivotRight + 1];
+      for(int j = 0; j < PivotLeft + PivotRight + 1; j++)
+      {
+         low_window[j] = rates[i - PivotRight + j].low;
+      }
+
       if(rates[i].low == low_window[ArrayMinimum(low_window)])
       {
          if(rates[i].time != g_last_pivot_low_time)
@@ -194,7 +202,6 @@ void FindPivotsAndCheckCHOCH()
       }
    }
 
-   // Comprobar condición de CHOCH
    if(g_daily_bias == BIAS_ALCISTA && g_last_pivot_high > g_prev_pivot_high && g_last_pivot_high_time > g_last_pivot_low_time && g_prev_pivot_high > 0)
    {
       g_choch_created = true;
@@ -240,12 +247,11 @@ void ManagePartialTakeProfit()
       if(trade.PositionClosePartial(_Symbol, volume_to_close))
       {
          Print("TP1 alcanzado. Cerrando 50% de la posición.");
-         // Mover SL a Breakeven en la posición restante
          if(trade.PositionModify(_Symbol, entry_price, PositionGetDouble(POSITION_TP)))
          {
             Print("SL movido a Breakeven.");
          }
-         g_tp1_hit = true; // Marcar que TP1 ya fue gestionado
+         g_tp1_hit = true;
       }
    }
 }
@@ -256,7 +262,6 @@ void ManagePartialTakeProfit()
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   //--- 1. Gestión de Tiempo y Datos ---
    MqlDateTime ny_time = GetNYTime();
    
    if(g_last_known_day != ny_time.day)
@@ -270,7 +275,6 @@ void OnTick()
    double latest_high = rates[0].high;
    double latest_low = rates[0].low;
 
-   //--- 2. Definir Rango de Precios (2:00 - 7:15 NY) ---
    if(ny_time.hour >= 2 && (ny_time.hour < 7 || (ny_time.hour == 7 && ny_time.min <= 15)))
    {
       g_bot_status = "Definiendo Rango";
@@ -283,7 +287,6 @@ void OnTick()
       Print("Rango definido: High=", g_range_high, ", Low=", g_range_low);
    }
 
-   //--- 3. Lógica de Sesión (7:45 - 11:00 NY) ---
    bool in_killzone = (ny_time.hour > 7 || (ny_time.hour == 7 && ny_time.min >= 45)) && ny_time.hour < 11;
 
    if(ny_time.hour >= 11 && g_daily_bias != BIAS_FINALIZADO)
@@ -292,14 +295,13 @@ void OnTick()
       {
          g_bot_status = "Sesión Finalizada";
          g_daily_bias = BIAS_FINALIZADO;
-         trade.OrderDelete(0, true); // Cancela todas las pendientes
+         trade.OrderDelete(0, true);
          Print("Fin de sesión. Setup del día cancelado.");
       }
    }
 
    if(in_killzone && g_daily_bias != BIAS_FINALIZADO && g_range_high > 0)
    {
-      // 3.1. Tomar Liquidez y Definir Bias
       if(g_daily_bias == BIAS_NINGUNO)
       {
          g_bot_status = "Esperando Bias";
@@ -317,13 +319,11 @@ void OnTick()
          }
       }
 
-      // 3.2. Buscar CHOCH
       if((g_daily_bias == BIAS_ALCISTA || g_daily_bias == BIAS_BAJISTA) && !g_choch_created)
       {
          FindPivotsAndCheckCHOCH();
       }
 
-      // 3.3. Calcular Fibo y preparar orden
       if(g_choch_created && g_entry_price == 0.0)
       {
          g_bot_status = "Esperando Retroceso";
@@ -346,7 +346,6 @@ void OnTick()
          
          Print("Niveles calculados: Entrada=", g_entry_price, ", SL=", g_sl_price, ", TP1=", g_tp1_price, ", TP2=", g_tp2_price);
          
-         // 3.4. Colocar orden límite
          double lot = CalculateLotSize(g_entry_price, g_sl_price);
          if(lot > 0)
          {
@@ -359,12 +358,11 @@ void OnTick()
                trade.SellLimit(lot, g_entry_price, _Symbol, g_sl_price, g_tp2_price, ORDER_TIME_GTC, 0, "BOT Liquidez");
             }
             g_bot_status = "Orden Pendiente";
-            g_daily_bias = BIAS_FINALIZADO; // Prevenir más trades hoy
+            g_daily_bias = BIAS_FINALIZADO;
          }
       }
    }
    
-   //--- 4. Gestión de Posición Abierta ---
    if(PositionsTotal() > 0)
    {
       ManagePartialTakeProfit();
