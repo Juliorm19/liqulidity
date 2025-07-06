@@ -1,11 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                   EstrategiaLiquidezNY_v1.2.mq5 |
+//|                                   EstrategiaLiquidezNY_v1.3.mq5 |
 //|                                  Creado para el usuario de GPT |
 //|                                             https://chat.openai.com |
 //+------------------------------------------------------------------+
 #property copyright "Creado para el usuario de GPT"
 #property link      "https://chat.openai.com"
-#property version   "1.2" // Versión con correcciones de compilador
+#property version   "1.3"
+#property strict
 
 #include <Trade\Trade.mqh>
 
@@ -35,8 +36,7 @@ input double   InpFiboTP2Level      = -64.0;   // Nivel de Take Profit 2
 input group "Visualización"
 input color    InpSessionLineColor  = clrGray;
 input color    InpPivotLabelColor   = clrWhite;
-input ENUM_BASE_CORNER InpPanelCorner = CORNER_TOP_LEFT;
-
+input ENUM_BASE_CORNER InpPanelCorner = CORNER_LEFT_UPPER;
 
 //--- Enumeraciones para estados y dirección
 enum ENUM_STATE
@@ -77,7 +77,7 @@ datetime    g_pivot_times[5]; // Almacenará los tiempos de los últimos 5 pivot
 // Variables de Fibonacci y orden
 double      g_fibo_anchor_1;
 double      g_fibo_anchor_2;
-long        g_pending_order_ticket = 0;
+ulong       g_pending_order_ticket = 0;
 
 // Panel de estado
 string      g_panel_name = "StatusPanel";
@@ -90,10 +90,10 @@ int OnInit()
 {
     //--- Inicializar objeto de trading
     trade.SetExpertMagicNumber(InpMagicNumber);
-    trade.SetTypeFillingBySymbol(_Symbol);
+    trade.SetTypeFilling(ORDER_FILLING_FOK);
 
     //--- Obtener handle del indicador ZigZag
-    g_zigzag_handle = iZigZag(_Symbol, _Period, InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
+    g_zigzag_handle = iCustom(_Symbol, _Period, "ZigZag", InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
     if(g_zigzag_handle == INVALID_HANDLE)
     {
         printf("Error al crear el handle del indicador ZigZag");
@@ -121,6 +121,10 @@ void OnDeinit(const int reason)
     ObjectsDeleteAll(0, "Session_");
     ObjectsDeleteAll(0, "Pivot_");
     ObjectsDeleteAll(0, "FiboEntry_");
+    
+    //--- Liberar handle del indicador
+    if(g_zigzag_handle != INVALID_HANDLE)
+        IndicatorRelease(g_zigzag_handle);
 }
 
 //+------------------------------------------------------------------+
@@ -130,9 +134,7 @@ void OnTick()
 {
     //--- Solo ejecutar en una nueva barra para eficiencia
     static datetime last_bar_time = 0;
-    long current_bar_time_long;
-    if(!SeriesInfoInteger(_Symbol, _Period, SERIES_LASTBAR_TIME, current_bar_time_long)) return;
-    datetime current_bar_time = (datetime)current_bar_time_long;
+    datetime current_bar_time = iTime(_Symbol, _Period, 0);
 
     if(last_bar_time == current_bar_time)
         return;
@@ -185,11 +187,22 @@ void HandleStateWaitSession(datetime ny_time)
     
     if(g_session_marked) return;
 
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    
+    // Crear strings de tiempo completo
+    string session_start_str = current_date + " " + InpSessionStart;
+    string session_end_str = current_date + " " + InpSessionEnd;
+    
+    // Convertir a datetime
+    datetime session_start_ny = StringToTime(session_start_str);
+    datetime session_end_ny = StringToTime(session_end_str);
+
     // Si ya pasó la hora de fin de sesión, la marcamos
-    if(ny_time >= StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionEnd))
+    if(ny_time >= session_end_ny)
     {
-        datetime session_start_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionStart));
-        datetime session_end_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionEnd));
+        datetime session_start_server_time = GetServerTimeFromNY(session_start_ny);
+        datetime session_end_server_time = GetServerTimeFromNY(session_end_ny);
 
         int start_bar = iBarShift(_Symbol, _Period, session_start_server_time);
         int end_bar = iBarShift(_Symbol, _Period, session_end_server_time);
@@ -197,8 +210,11 @@ void HandleStateWaitSession(datetime ny_time)
         if(start_bar < 0 || end_bar < 0) return;
 
         double highs[], lows[];
-        CopyHigh(_Symbol, _Period, end_bar, start_bar - end_bar + 1, highs);
-        CopyLow(_Symbol, _Period, end_bar, start_bar - end_bar + 1, lows);
+        int bars_count = start_bar - end_bar + 1;
+        
+        if(CopyHigh(_Symbol, _Period, end_bar, bars_count, highs) < bars_count ||
+           CopyLow(_Symbol, _Period, end_bar, bars_count, lows) < bars_count)
+            return;
 
         g_session_high = highs[ArrayMaximum(highs)];
         g_session_low = lows[ArrayMinimum(lows)];
@@ -220,11 +236,22 @@ void HandleStateWaitBias(datetime ny_time)
 {
     UpdateStatusPanel("Waiting Bias");
 
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    
+    // Crear strings de tiempo completo
+    string trading_start_str = current_date + " " + InpTradingStart;
+    string trading_end_str = current_date + " " + InpTradingEnd;
+    
+    // Convertir a datetime
+    datetime trading_start_ny = StringToTime(trading_start_str);
+    datetime trading_end_ny = StringToTime(trading_end_str);
+
     // Verificar si estamos dentro de la ventana de trading
-    if(ny_time < StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingStart)) return;
+    if(ny_time < trading_start_ny) return;
     
     // Si se pasa la ventana de trading, fin del día
-    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    if(ny_time > trading_end_ny)
     {
         g_currentState = STATE_DAY_END;
         UpdateStatusPanel("Trading Window Closed");
@@ -257,7 +284,12 @@ void HandleStateWaitBos(datetime ny_time)
 {
     UpdateStatusPanel("Bias: " + EnumToString(g_bias) + " | Waiting BOS");
 
-    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    string trading_end_str = current_date + " " + InpTradingEnd;
+    datetime trading_end_ny = StringToTime(trading_end_str);
+
+    if(ny_time > trading_end_ny)
     {
         g_currentState = STATE_DAY_END;
         UpdateStatusPanel("Trading Window Closed");
@@ -298,7 +330,12 @@ void HandleStateWaitChoch(datetime ny_time)
 {
     UpdateStatusPanel("BOS Created | Waiting CHOCH");
 
-    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    string trading_end_str = current_date + " " + InpTradingEnd;
+    datetime trading_end_ny = StringToTime(trading_end_str);
+
+    if(ny_time > trading_end_ny)
     {
         g_currentState = STATE_DAY_END;
         UpdateStatusPanel("Trading Window Closed");
@@ -341,7 +378,12 @@ void HandleStateWaitRetracement(datetime ny_time)
 {
     UpdateStatusPanel("CHOCH Created | Waiting Retracement");
 
-    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd))
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    string trading_end_str = current_date + " " + InpTradingEnd;
+    datetime trading_end_ny = StringToTime(trading_end_str);
+
+    if(ny_time > trading_end_ny)
     {
         g_currentState = STATE_DAY_END;
         UpdateStatusPanel("Trading Window Closed");
@@ -360,10 +402,9 @@ void HandleStateWaitRetracement(datetime ny_time)
         tp1_price = g_fibo_anchor_1 - (range * (InpFiboTP1Level / 100.0));
         tp2_price = g_fibo_anchor_1 - (range * (InpFiboTP2Level / 100.0));
         
-        double current_low;
-        SymbolInfoDouble(_Symbol, SYMBOL_LOW, current_low);
+        double current_ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
         // No colocar orden si el precio ya pasó el nivel de entrada
-        if(current_low < entry_price)
+        if(current_ask < entry_price)
         {
             g_currentState = STATE_DAY_END;
             UpdateStatusPanel("Entry Missed. Price too low.");
@@ -376,12 +417,10 @@ void HandleStateWaitRetracement(datetime ny_time)
         if(lot_size > 0)
         {
             // Colocar 2 órdenes pendientes, cada una con la mitad del lotaje
-            trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1");
-            trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
-            
-            if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
+            if(trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1"))
             {
-                g_pending_order_ticket = (long)trade.ResultOrder();
+                trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
+                g_pending_order_ticket = trade.ResultOrder();
                 g_currentState = STATE_TRADE_MANAGEMENT;
                 DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
                 printf("Órdenes Buy Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
@@ -396,10 +435,9 @@ void HandleStateWaitRetracement(datetime ny_time)
         tp1_price = g_fibo_anchor_1 + (range * (InpFiboTP1Level / 100.0));
         tp2_price = g_fibo_anchor_1 + (range * (InpFiboTP2Level / 100.0));
 
-        double current_high;
-        SymbolInfoDouble(_Symbol, SYMBOL_HIGH, current_high);
+        double current_bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         // No colocar orden si el precio ya pasó el nivel de entrada
-        if(current_high > entry_price)
+        if(current_bid > entry_price)
         {
             g_currentState = STATE_DAY_END;
             UpdateStatusPanel("Entry Missed. Price too high.");
@@ -412,12 +450,10 @@ void HandleStateWaitRetracement(datetime ny_time)
         if(lot_size > 0)
         {
             // Colocar 2 órdenes pendientes
-            trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1");
-            trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
-
-            if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
+            if(trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1"))
             {
-                g_pending_order_ticket = (long)trade.ResultOrder();
+                trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
+                g_pending_order_ticket = trade.ResultOrder();
                 g_currentState = STATE_TRADE_MANAGEMENT;
                 DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
                 printf("Órdenes Sell Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
@@ -440,7 +476,7 @@ void HandleStateTradeManagement(datetime ny_time)
     // Revisar si hay posiciones abiertas con nuestro Magic Number
     for(int i = total_positions - 1; i >= 0; i--)
     {
-        if(PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
+        if(PositionSelectByIndex(i) && PositionGetInteger(POSITION_MAGIC) == InpMagicNumber)
         {
             active_trade = true;
             break;
@@ -452,7 +488,7 @@ void HandleStateTradeManagement(datetime ny_time)
     {
         for(int i = total_orders - 1; i >= 0; i--)
         {
-            if(OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
+            if(OrderSelect(OrderGetTicket(i)) && OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
             {
                 active_trade = true;
                 break;
@@ -468,14 +504,19 @@ void HandleStateTradeManagement(datetime ny_time)
         printf("El ciclo de trading ha finalizado para hoy.");
     }
     
+    // Obtener fecha actual de NY
+    string current_date = TimeToString(ny_time, TIME_DATE);
+    string trading_end_str = current_date + " " + InpTradingEnd;
+    datetime trading_end_ny = StringToTime(trading_end_str);
+    
     // Si la ventana de trading se cierra y la orden pendiente no se activó, la cancelamos
-    if(ny_time > StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpTradingEnd) && total_positions == 0 && total_orders > 0)
+    if(ny_time > trading_end_ny && total_positions == 0 && total_orders > 0)
     {
         // Cancelar todas las órdenes pendientes de este EA
         for(int i = total_orders - 1; i >= 0; i--)
         {
             ulong ticket = OrderGetTicket(i);
-            if(OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
+            if(OrderSelect(ticket) && OrderGetInteger(ORDER_MAGIC) == InpMagicNumber)
             {
                 trade.OrderDelete(ticket);
             }
@@ -485,7 +526,6 @@ void HandleStateTradeManagement(datetime ny_time)
         printf("Orden pendiente cancelada por fin de ventana de trading.");
     }
 }
-
 
 //+------------------------------------------------------------------+
 //|                       FUNCIONES AUXILIARES                       |
@@ -518,9 +558,9 @@ void ResetDailyVariables()
 //+------------------------------------------------------------------+
 datetime GetNYTime(datetime server_time)
 {
-    long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
+    long server_gmt_offset = (long)TimeCurrent() - (long)TimeGMT();
     long ny_gmt_offset = InpNYTimeOffset * 3600;
-    return (datetime)(server_time - server_gmt_offset + ny_gmt_offset);
+    return (datetime)((long)server_time - server_gmt_offset + ny_gmt_offset);
 }
 
 //+------------------------------------------------------------------+
@@ -528,9 +568,9 @@ datetime GetNYTime(datetime server_time)
 //+------------------------------------------------------------------+
 datetime GetServerTimeFromNY(datetime ny_time)
 {
-    long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
+    long server_gmt_offset = (long)TimeCurrent() - (long)TimeGMT();
     long ny_gmt_offset = InpNYTimeOffset * 3600;
-    return (datetime)(ny_time + server_gmt_offset - ny_gmt_offset);
+    return (datetime)((long)ny_time + server_gmt_offset - ny_gmt_offset);
 }
 
 //+------------------------------------------------------------------+
@@ -589,6 +629,7 @@ double CalculateLotSize(double stop_loss_pips)
 
     return lot_size;
 }
+
 
 //+------------------------------------------------------------------+
 //| Dibuja una línea en el gráfico                                   |
