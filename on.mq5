@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                       EstrategiaLiquidezNY.mq5 |
+//|                                   EstrategiaLiquidezNY_v1.1.mq5 |
 //|                                  Creado para el usuario de GPT |
 //|                                             https://chat.openai.com |
 //+------------------------------------------------------------------+
 #property copyright "Creado para el usuario de GPT"
 #property link      "https://chat.openai.com"
-#property version   "1.00"
+#property version   "1.1" // Versión corregida
 
 #include <Trade\Trade.mqh>
 
@@ -71,8 +71,8 @@ double      g_session_low;
 bool        g_session_marked = false;
 
 // Variables de la estructura
-double      g_pivots[4]; // Almacenará los últimos 4 pivots de precio
-datetime    g_pivot_times[4]; // Almacenará los tiempos de los últimos 4 pivots
+double      g_pivots[5]; // Almacenará los últimos 5 pivots de precio
+datetime    g_pivot_times[5]; // Almacenará los tiempos de los últimos 5 pivots
 
 // Variables de Fibonacci y orden
 double      g_fibo_anchor_1;
@@ -90,10 +90,10 @@ int OnInit()
 {
     //--- Inicializar objeto de trading
     trade.SetExpertMagicNumber(InpMagicNumber);
-    trade.SetTypeFillingBySymbol(Symbol());
+    trade.SetTypeFillingBySymbol(_Symbol);
 
     //--- Obtener handle del indicador ZigZag
-    g_zigzag_handle = iZigZag(Symbol(), Period(), InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
+    g_zigzag_handle = iZigZag(_Symbol, _Period, InpZigZagDepth, InpZigZagDeviation, InpZigZagBackstep);
     if(g_zigzag_handle == INVALID_HANDLE)
     {
         printf("Error al crear el handle del indicador ZigZag");
@@ -130,16 +130,21 @@ void OnTick()
 {
     //--- Solo ejecutar en una nueva barra para eficiencia
     static datetime last_bar_time = 0;
-    datetime current_bar_time = (datetime)SeriesInfoInteger(Symbol(), Period(), SERIES_LASTBAR_TIME);
+    long current_bar_time_long;
+    if(!SeriesInfoInteger(_Symbol, _Period, SERIES_LASTBAR_TIME, current_bar_time_long)) return;
+    datetime current_bar_time = (datetime)current_bar_time_long;
+
     if(last_bar_time == current_bar_time)
         return;
     last_bar_time = current_bar_time;
 
     //--- Obtener hora actual de NY
     datetime ny_time = GetNYTime(TimeCurrent());
+    MqlDateTime dt_ny;
+    TimeToStruct(ny_time, dt_ny);
     
     //--- Resetear al inicio de un nuevo día (antes de la sesión)
-    if(TimeHour(ny_time) == 0 && TimeMinute(ny_time) == 0 && g_currentState != STATE_WAIT_SESSION)
+    if(dt_ny.hour == 0 && dt_ny.min == 0 && g_currentState != STATE_WAIT_SESSION)
     {
         ResetDailyVariables();
     }
@@ -186,14 +191,14 @@ void HandleStateWaitSession(datetime ny_time)
         datetime session_start_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionStart));
         datetime session_end_server_time = GetServerTimeFromNY(StringToTime(TimeToString(ny_time, TIME_DATE) + " " + InpSessionEnd));
 
-        int start_bar = iBarShift(Symbol(), Period(), session_start_server_time);
-        int end_bar = iBarShift(Symbol(), Period(), session_end_server_time);
+        int start_bar = iBarShift(_Symbol, _Period, session_start_server_time);
+        int end_bar = iBarShift(_Symbol, _Period, session_end_server_time);
 
         if(start_bar < 0 || end_bar < 0) return;
 
         double highs[], lows[];
-        CopyHigh(Symbol(), Period(), end_bar, start_bar - end_bar + 1, highs);
-        CopyLow(Symbol(), Period(), end_bar, start_bar - end_bar + 1, lows);
+        CopyHigh(_Symbol, _Period, end_bar, start_bar - end_bar + 1, highs);
+        CopyLow(_Symbol, _Period, end_bar, start_bar - end_bar + 1, lows);
 
         g_session_high = highs[ArrayMaximum(highs)];
         g_session_low = lows[ArrayMinimum(lows)];
@@ -226,18 +231,18 @@ void HandleStateWaitBias(datetime ny_time)
         return;
     }
 
-    MqlRates current_bar;
-    CopyRates(Symbol(), Period(), 0, 1, current_bar);
+    MqlRates current_bar[1];
+    if(CopyRates(_Symbol, _Period, 0, 1, current_bar) < 1) return;
 
     // Toma de liquidez por encima -> BIAS BAJISTA
-    if(current_bar.high > g_session_high)
+    if(current_bar[0].high > g_session_high)
     {
         g_bias = BIAS_BEARISH;
         g_currentState = STATE_WAIT_BOS;
         printf("Liquidez tomada por encima. BIAS: BAJISTA");
     }
     // Toma de liquidez por debajo -> BIAS ALCISTA
-    else if(current_bar.low < g_session_low)
+    else if(current_bar[0].low < g_session_low)
     {
         g_bias = BIAS_BULLISH;
         g_currentState = STATE_WAIT_BOS;
@@ -355,26 +360,28 @@ void HandleStateWaitRetracement(datetime ny_time)
         tp1_price = g_fibo_anchor_1 - (range * (InpFiboTP1Level / 100.0));
         tp2_price = g_fibo_anchor_1 - (range * (InpFiboTP2Level / 100.0));
         
+        double current_low;
+        SymbolInfoDouble(_Symbol, SYMBOL_LOW, current_low);
         // No colocar orden si el precio ya pasó el nivel de entrada
-        if(SymbolInfoDouble(Symbol(), SYMBOL_LOW) < entry_price)
+        if(current_low < entry_price)
         {
             g_currentState = STATE_DAY_END;
             UpdateStatusPanel("Entry Missed. Price too low.");
             return;
         }
 
-        double stop_loss_pips = (entry_price - sl_price) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        double stop_loss_pips = (entry_price - sl_price) / _Point;
         double lot_size = CalculateLotSize(stop_loss_pips);
         
         if(lot_size > 0)
         {
             // Colocar 2 órdenes pendientes, cada una con la mitad del lotaje
-            trade.BuyLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp1_price, 0, 0, "TP1");
-            trade.BuyLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp2_price, 0, 0, "TP2");
+            trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1");
+            trade.BuyLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
             
             if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
             {
-                g_pending_order_ticket = trade.ResultOrder();
+                g_pending_order_ticket = (long)trade.ResultOrder();
                 g_currentState = STATE_TRADE_MANAGEMENT;
                 DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
                 printf("Órdenes Buy Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
@@ -389,26 +396,28 @@ void HandleStateWaitRetracement(datetime ny_time)
         tp1_price = g_fibo_anchor_1 + (range * (InpFiboTP1Level / 100.0));
         tp2_price = g_fibo_anchor_1 + (range * (InpFiboTP2Level / 100.0));
 
+        double current_high;
+        SymbolInfoDouble(_Symbol, SYMBOL_HIGH, current_high);
         // No colocar orden si el precio ya pasó el nivel de entrada
-        if(SymbolInfoDouble(Symbol(), SYMBOL_HIGH) > entry_price)
+        if(current_high > entry_price)
         {
             g_currentState = STATE_DAY_END;
             UpdateStatusPanel("Entry Missed. Price too high.");
             return;
         }
 
-        double stop_loss_pips = (sl_price - entry_price) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        double stop_loss_pips = (sl_price - entry_price) / _Point;
         double lot_size = CalculateLotSize(stop_loss_pips);
 
         if(lot_size > 0)
         {
             // Colocar 2 órdenes pendientes
-            trade.SellLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp1_price, 0, 0, "TP1");
-            trade.SellLimit(lot_size / 2, entry_price, Symbol(), sl_price, tp2_price, 0, 0, "TP2");
+            trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp1_price, 0, 0, "TP1");
+            trade.SellLimit(lot_size / 2, entry_price, _Symbol, sl_price, tp2_price, 0, 0, "TP2");
 
             if(trade.ResultRetcode() == TRADE_RETCODE_DONE)
             {
-                g_pending_order_ticket = trade.ResultOrder();
+                g_pending_order_ticket = (long)trade.ResultOrder();
                 g_currentState = STATE_TRADE_MANAGEMENT;
                 DrawFibo("FiboEntry_", g_pivot_times[1], g_fibo_anchor_1, g_pivot_times[0], g_fibo_anchor_2);
                 printf("Órdenes Sell Limit colocadas. Lote: %f, Entrada: %f, SL: %f", lot_size, entry_price, sl_price);
@@ -511,7 +520,7 @@ datetime GetNYTime(datetime server_time)
 {
     long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
     long ny_gmt_offset = InpNYTimeOffset * 3600;
-    return server_time - server_gmt_offset + ny_gmt_offset;
+    return (datetime)(server_time - server_gmt_offset + ny_gmt_offset);
 }
 
 //+------------------------------------------------------------------+
@@ -521,7 +530,7 @@ datetime GetServerTimeFromNY(datetime ny_time)
 {
     long server_gmt_offset = TerminalInfoInteger(TERMINAL_GMT_OFFSET);
     long ny_gmt_offset = InpNYTimeOffset * 3600;
-    return ny_time + server_gmt_offset - ny_gmt_offset;
+    return (datetime)(ny_time + server_gmt_offset - ny_gmt_offset);
 }
 
 //+------------------------------------------------------------------+
@@ -538,7 +547,7 @@ bool FindPivots(int count)
     int pivots_found = 0;
     MqlRates rates[];
     ArraySetAsSeries(rates, true);
-    CopyRates(Symbol(), Period(), 0, 200, rates);
+    if(CopyRates(_Symbol, _Period, 0, 200, rates) < 200) return false;
 
     for(int i = 1; i < 200 && pivots_found < count; i++)
     {
@@ -563,16 +572,15 @@ double CalculateLotSize(double stop_loss_pips)
     double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double risk_amount = account_balance * (InpRiskPercent / 100.0);
     
-    MqlTick last_tick;
-    SymbolInfoTick(Symbol(), last_tick);
+    double tick_value;
+    if(!SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE, tick_value)) return 0.0;
     
-    double tick_value = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
     double lot_size = risk_amount / (stop_loss_pips * tick_value);
     
     // Normalizar y verificar límites de lotaje
-    double min_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
-    double max_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
-    double lot_step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+    double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
 
     lot_size = MathFloor(lot_size / lot_step) * lot_step;
 
@@ -608,7 +616,7 @@ void CreatePivotLabel(datetime time, double price, string text)
     // Ajustar posición para que no se solape con la vela
     bool is_high = (text == "H" || text == "HH");
     ObjectSetInteger(0, name, OBJPROP_ANCHOR, is_high ? ANCHOR_BOTTOM : ANCHOR_TOP);
-    ObjectSetDouble(0, name, OBJPROP_PRICE, is_high ? price + SymbolInfoInteger(Symbol(), SYMBOL_SPREAD) * _Point : price - SymbolInfoInteger(Symbol(), SYMBOL_SPREAD) * _Point);
+    ObjectSetDouble(0, name, OBJPROP_PRICE, is_high ? price + SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point : price - SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point);
 }
 
 //+------------------------------------------------------------------+
@@ -617,17 +625,37 @@ void CreatePivotLabel(datetime time, double price, string text)
 void DrawFibo(string name_prefix, datetime time1, double price1, datetime time2, double price2)
 {
     string name = name_prefix + TimeToString(TimeCurrent());
-    ObjectCreate(0, name, OBJ_FIBO, 0, time1, price1, time2, price2);
+    if(!ObjectCreate(0, name, OBJ_FIBO, 0, time1, price1, time2, price2))
+    {
+        printf("Error al crear el objeto Fibonacci: %d", _LastError);
+        return;
+    }
+    
     ObjectSetInteger(0, name, OBJPROP_COLOR, clrGold);
     ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
     
-    // Añadir niveles personalizados si es necesario
-    ObjectSetInteger(0, name, OBJPROP_FIBOLEVELS, 5); // Número de niveles
+    // Añadir niveles personalizados
+    ObjectSetInteger(0, name, OBJPROP_FIBOLEVELS, 5); // Número de niveles que vamos a definir
+    
+    // Nivel 0: Entrada
     ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 0, InpFiboEntryLevel/100.0);
+    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 0, "Entry " + DoubleToString(InpFiboEntryLevel, 1));
+    
+    // Nivel 1: Stop Loss
     ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 1, InpFiboSLLevel/100.0);
+    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 1, "SL " + DoubleToString(InpFiboSLLevel, 1));
+
+    // Nivel 2: Take Profit 1
     ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 2, InpFiboTP1Level/100.0);
+    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 2, "TP1 " + DoubleToString(InpFiboTP1Level, 1));
+
+    // Nivel 3: Take Profit 2
     ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 3, InpFiboTP2Level/100.0);
-    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 4, 0.0); // Nivel 0
+    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 3, "TP2 " + DoubleToString(InpFiboTP2Level, 1));
+    
+    // Nivel 4: Nivel 0%
+    ObjectSetDouble(0, name, OBJPROP_FIBOLEVEL_VALUE, 4, 0.0);
+    ObjectSetString(0, name, OBJPROP_FIBOLEVEL_DESCRIPTION, 4, "0.0");
 }
 
 //+------------------------------------------------------------------+
