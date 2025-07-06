@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                   EstrategiaLiquidezNY_v1.1.mq5 |
+//|                                   EstrategiaLiquidezNY_v1.2.mq5 |
 //|                                  Creado para el usuario de GPT |
 //|                                             https://chat.openai.com |
 //+------------------------------------------------------------------+
 #property copyright "Creado para el usuario de GPT"
 #property link      "https://chat.openai.com"
-#property version   "1.1" // Versión corregida
+#property version   "1.2" // Versión con correcciones de compilador
 
 #include <Trade\Trade.mqh>
 
@@ -627,7 +627,7 @@ void DrawFibo(string name_prefix, datetime time1, double price1, datetime time2,
     string name = name_prefix + TimeToString(TimeCurrent());
     if(!ObjectCreate(0, name, OBJ_FIBO, 0, time1, price1, time2, price2))
     {
-        printf("Error al crear el objeto Fibonacci: %d", _LastError);
+        printf("Error al crear el objeto Fibonacci: %d", (int)_LastError);
         return;
     }
     
