@@ -1,81 +1,91 @@
 'CORNER_TOP_LEFT' - undeclared identifier	on.mq5	38	41
 'iZigZag' - undeclared identifier	on.mq5	96	23
-',' - unexpected token	on.mq5	96	39
-'Symbol' - some operator expected	on.mq5	96	31
-')' - expression expected	on.mq5	96	48
-',' - unexpected token	on.mq5	96	49
-',' - unexpected token	on.mq5	96	65
-expression has no effect	on.mq5	96	51
-',' - unexpected token	on.mq5	96	85
-expression has no effect	on.mq5	96	67
-')' - unexpected token	on.mq5	96	104
-expression has no effect	on.mq5	96	87
-'SERIES_LASTBAR_TIME' - undeclared identifier	on.mq5	133	81
-'SeriesInfoInteger' - no one of the overloads can be applied to the function call	on.mq5	133	43
-could be one of 2 function(s)	on.mq5	133	43
-   built-in: long SeriesInfoInteger(const string,ENUM_TIMEFRAMES,ENUM_SERIES_INFO_INTEGER)	on.mq5	133	43
-   built-in: bool SeriesInfoInteger(const string,ENUM_TIMEFRAMES,ENUM_SERIES_INFO_INTEGER,long&)	on.mq5	133	43
-'TimeHour' - undeclared identifier	on.mq5	142	8
-'ny_time' - some operator expected	on.mq5	142	17
-'(' - unbalanced left parenthesis	on.mq5	142	7
-'==' - operand expected	on.mq5	142	26
-'TimeMinute' - undeclared identifier	on.mq5	142	34
-'ny_time' - some operator expected	on.mq5	142	45
-expression has no effect	on.mq5	142	31
-')' - unexpected token	on.mq5	142	98
-expression has no effect	on.mq5	142	59
-'CopyRates' - no one of the overloads can be applied to the function call	on.mq5	230	5
-could be one of 3 function(s)	on.mq5	230	5
-   built-in: int CopyRates(const string,ENUM_TIMEFRAMES,int,int,MqlRates&[])	on.mq5	230	5
-   built-in: int CopyRates(const string,ENUM_TIMEFRAMES,datetime,int,MqlRates&[])	on.mq5	230	5
-   built-in: int CopyRates(const string,ENUM_TIMEFRAMES,datetime,datetime,MqlRates&[])	on.mq5	230	5
-'SYMBOL_LOW' - undeclared identifier	on.mq5	359	39
-'SymbolInfoDouble' - no one of the overloads can be applied to the function call	on.mq5	359	12
-could be one of 2 function(s)	on.mq5	359	12
-   built-in: double SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE)	on.mq5	359	12
-   built-in: bool SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE,double&)	on.mq5	359	12
-possible loss of data due to type conversion from 'ulong' to 'long'	on.mq5	377	40
-'SYMBOL_HIGH' - undeclared identifier	on.mq5	393	39
-'SymbolInfoDouble' - no one of the overloads can be applied to the function call	on.mq5	393	12
-could be one of 2 function(s)	on.mq5	393	12
-   built-in: double SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE)	on.mq5	393	12
-   built-in: bool SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE,double&)	on.mq5	393	12
-possible loss of data due to type conversion from 'ulong' to 'long'	on.mq5	411	40
-'TERMINAL_GMT_OFFSET' - undeclared identifier	on.mq5	512	50
-'TERMINAL_GMT_OFFSET' - cannot convert enum	on.mq5	512	50
-   built-in: int TerminalInfoInteger(ENUM_TERMINAL_INFO_INTEGER)	on.mq5	512	50
-possible loss of data due to type conversion from 'long' to 'datetime'	on.mq5	514	5
-'TERMINAL_GMT_OFFSET' - undeclared identifier	on.mq5	522	50
-'TERMINAL_GMT_OFFSET' - cannot convert enum	on.mq5	522	50
-   built-in: int TerminalInfoInteger(ENUM_TERMINAL_INFO_INTEGER)	on.mq5	522	50
-possible loss of data due to type conversion from 'long' to 'datetime'	on.mq5	524	5
-'OBJPROP_FIBOLEVELS' - undeclared identifier	on.mq5	625	31
-'ObjectSetInteger' - no one of the overloads can be applied to the function call	on.mq5	625	5
-could be one of 2 function(s)	on.mq5	625	5
-   built-in: bool ObjectSetInteger(long,const string,ENUM_OBJECT_PROPERTY_INTEGER,long)	on.mq5	625	5
-   built-in: bool ObjectSetInteger(long,const string,ENUM_OBJECT_PROPERTY_INTEGER,int,long)	on.mq5	625	5
-'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	626	30
-'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	626	5
-could be one of 2 function(s)	on.mq5	626	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	626	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	626	5
-'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	627	30
-'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	627	5
-could be one of 2 function(s)	on.mq5	627	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	627	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	627	5
-'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	628	30
-'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	628	5
-could be one of 2 function(s)	on.mq5	628	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	628	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	628	5
-'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	629	30
-'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	629	5
-could be one of 2 function(s)	on.mq5	629	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	629	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	629	5
-'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	630	30
-'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	630	5
-could be one of 2 function(s)	on.mq5	630	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	630	5
-   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	630	5
+',' - unexpected token	on.mq5	96	38
+'_Symbol' - some operator expected	on.mq5	96	31
+',' - unexpected token	on.mq5	96	47
+',' - unexpected token	on.mq5	96	63
+expression has no effect	on.mq5	96	49
+',' - unexpected token	on.mq5	96	83
+expression has no effect	on.mq5	96	65
+')' - unexpected token	on.mq5	96	102
+expression has no effect	on.mq5	96	85
+'SERIES_LASTBAR_TIME' - undeclared identifier	on.mq5	134	45
+'SeriesInfoInteger' - no one of the overloads can be applied to the function call	on.mq5	134	9
+could be one of 2 function(s)	on.mq5	134	9
+   built-in: long SeriesInfoInteger(const string,ENUM_TIMEFRAMES,ENUM_SERIES_INFO_INTEGER)	on.mq5	134	9
+   built-in: bool SeriesInfoInteger(const string,ENUM_TIMEFRAMES,ENUM_SERIES_INFO_INTEGER,long&)	on.mq5	134	9
+possible use of uninitialized variable 'current_bar_time_long'	on.mq5	135	43
+'SYMBOL_LOW' - undeclared identifier	on.mq5	364	35
+'SymbolInfoDouble' - no one of the overloads can be applied to the function call	on.mq5	364	9
+could be one of 2 function(s)	on.mq5	364	9
+   built-in: double SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE)	on.mq5	364	9
+   built-in: bool SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE,double&)	on.mq5	364	9
+possible use of uninitialized variable 'current_low'	on.mq5	366	12
+'SYMBOL_HIGH' - undeclared identifier	on.mq5	400	35
+'SymbolInfoDouble' - no one of the overloads can be applied to the function call	on.mq5	400	9
+could be one of 2 function(s)	on.mq5	400	9
+   built-in: double SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE)	on.mq5	400	9
+   built-in: bool SymbolInfoDouble(const string,ENUM_SYMBOL_INFO_DOUBLE,double&)	on.mq5	400	9
+possible use of uninitialized variable 'current_high'	on.mq5	402	12
+'TERMINAL_GMT_OFFSET' - undeclared identifier	on.mq5	521	50
+'TERMINAL_GMT_OFFSET' - cannot convert enum	on.mq5	521	50
+   built-in: int TerminalInfoInteger(ENUM_TERMINAL_INFO_INTEGER)	on.mq5	521	50
+'TERMINAL_GMT_OFFSET' - undeclared identifier	on.mq5	531	50
+'TERMINAL_GMT_OFFSET' - cannot convert enum	on.mq5	531	50
+   built-in: int TerminalInfoInteger(ENUM_TERMINAL_INFO_INTEGER)	on.mq5	531	50
+'OBJPROP_FIBOLEVELS' - undeclared identifier	on.mq5	638	31
+'ObjectSetInteger' - no one of the overloads can be applied to the function call	on.mq5	638	5
+could be one of 2 function(s)	on.mq5	638	5
+   built-in: bool ObjectSetInteger(long,const string,ENUM_OBJECT_PROPERTY_INTEGER,long)	on.mq5	638	5
+   built-in: bool ObjectSetInteger(long,const string,ENUM_OBJECT_PROPERTY_INTEGER,int,long)	on.mq5	638	5
+'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	641	30
+'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	641	5
+could be one of 2 function(s)	on.mq5	641	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	641	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	641	5
+'OBJPROP_FIBOLEVEL_DESCRIPTION' - undeclared identifier	on.mq5	642	30
+'ObjectSetString' - no one of the overloads can be applied to the function call	on.mq5	642	5
+could be one of 2 function(s)	on.mq5	642	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,const string)	on.mq5	642	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,int,const string)	on.mq5	642	5
+'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	645	30
+'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	645	5
+could be one of 2 function(s)	on.mq5	645	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	645	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	645	5
+'OBJPROP_FIBOLEVEL_DESCRIPTION' - undeclared identifier	on.mq5	646	30
+'ObjectSetString' - no one of the overloads can be applied to the function call	on.mq5	646	5
+could be one of 2 function(s)	on.mq5	646	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,const string)	on.mq5	646	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,int,const string)	on.mq5	646	5
+'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	649	30
+'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	649	5
+could be one of 2 function(s)	on.mq5	649	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	649	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	649	5
+'OBJPROP_FIBOLEVEL_DESCRIPTION' - undeclared identifier	on.mq5	650	30
+'ObjectSetString' - no one of the overloads can be applied to the function call	on.mq5	650	5
+could be one of 2 function(s)	on.mq5	650	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,const string)	on.mq5	650	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,int,const string)	on.mq5	650	5
+'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	653	30
+'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	653	5
+could be one of 2 function(s)	on.mq5	653	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	653	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	653	5
+'OBJPROP_FIBOLEVEL_DESCRIPTION' - undeclared identifier	on.mq5	654	30
+'ObjectSetString' - no one of the overloads can be applied to the function call	on.mq5	654	5
+could be one of 2 function(s)	on.mq5	654	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,const string)	on.mq5	654	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,int,const string)	on.mq5	654	5
+'OBJPROP_FIBOLEVEL_VALUE' - undeclared identifier	on.mq5	657	30
+'ObjectSetDouble' - no one of the overloads can be applied to the function call	on.mq5	657	5
+could be one of 2 function(s)	on.mq5	657	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,double)	on.mq5	657	5
+   built-in: bool ObjectSetDouble(long,const string,ENUM_OBJECT_PROPERTY_DOUBLE,int,double)	on.mq5	657	5
+'OBJPROP_FIBOLEVEL_DESCRIPTION' - undeclared identifier	on.mq5	658	30
+'ObjectSetString' - no one of the overloads can be applied to the function call	on.mq5	658	5
+could be one of 2 function(s)	on.mq5	658	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,const string)	on.mq5	658	5
+   built-in: bool ObjectSetString(long,const string,ENUM_OBJECT_PROPERTY_STRING,int,const string)	on.mq5	658	5
+
