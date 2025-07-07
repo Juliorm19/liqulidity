@@ -16,11 +16,11 @@ input string   InpSessionStart      = "02:00"; // Inicio del rango de Asia
 input string   InpSessionEnd        = "07:15"; // Fin del rango de Asia
 input string   InpTradingStart      = "07:45"; // Inicio de la ventana de trading
 input string   InpTradingEnd        = "11:00"; // Fin de la ventana de trading
-input int      InpNYTimeOffset      = -5;      // Desplazamiento horario de NY respecto a GMT (ej. -5 para EST, -4 para EDT)
+input int      InpNYTimeOffset      = -5;      // Desplazamiento horario de NY respecto a GMT
 
 input group "Gestión de Riesgo"
-input double   InpRiskPercent       = 1.0;     // Porcentaje de riesgo por operación
-input ulong    InpMagicNumber       = 12345;   // Número Mágico para las operaciones
+input double   InpRiskPercent       = 1.0;     // Riesgo por operación (%)
+input ulong    InpMagicNumber       = 12345;   // Número Mágico 
 
 input group "Parámetros de Estructura (ZigZag)"
 input int      InpZigZagDepth       = 12;
@@ -30,8 +30,8 @@ input int      InpZigZagBackstep    = 3;
 input group "Configuración de Fibonacci"
 input double   InpFiboEntryLevel    = 61.8;    // Nivel de entrada de Fibonacci
 input double   InpFiboSLLevel       = 100.0;   // Nivel de Stop Loss de Fibonacci
-input double   InpFiboTP1Level      = -27.0;   // Nivel de Take Profit 1
-input double   InpFiboTP2Level      = -64.0;   // Nivel de Take Profit 2
+input double   InpFiboTP1Level      = -27.0;   // Nivel de TP 1
+input double   InpFiboTP2Level      = -64.0;   // Nivel de TP 2
 
 input group "Visualización"
 input color    InpSessionLineColor  = clrGray;
