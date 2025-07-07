@@ -1,0 +1,244 @@
+// Estructura para almacenar información del pivote
+struct PivotInfo
+{
+    double price;
+    datetime time;
+    int index;
+    bool is_high;  // true para máximo, false para mínimo
+};
+
+// Arrays globales para almacenar pivotes
+PivotInfo g_pivots[];
+int g_pivot_count = 0;
+
+// Función principal para encontrar pivotes
+bool FindPivots(int count, int lookback_period = 5, double min_change_percent = 0.1)
+{
+    // Obtener datos de precios
+    MqlRates rates[];
+    ArraySetAsSeries(rates, true);
+    int bars_needed = 200 + lookback_period * 2;
+    
+    if(CopyRates(_Symbol, _Period, 0, bars_needed, rates) < bars_needed) 
+        return false;
+    
+    // Redimensionar array de pivotes
+    ArrayResize(g_pivots, count * 2); // *2 para máximos y mínimos
+    g_pivot_count = 0;
+    
+    // Buscar pivotes usando método de ventana deslizante
+    for(int i = lookback_period; i < bars_needed - lookback_period && g_pivot_count < count; i++)
+    {
+        bool is_pivot_high = IsPivotHigh(rates, i, lookback_period);
+        bool is_pivot_low = IsPivotLow(rates, i, lookback_period);
+        
+        if(is_pivot_high || is_pivot_low)
+        {
+            // Validar que el pivote tenga suficiente cambio porcentual
+            double pivot_price = is_pivot_high ? rates[i].high : rates[i].low;
+            
+            if(IsSignificantPivot(rates, i, lookback_period, min_change_percent))
+            {
+                // Almacenar el pivote
+                g_pivots[g_pivot_count].price = pivot_price;
+                g_pivots[g_pivot_count].time = rates[i].time;
+                g_pivots[g_pivot_count].index = i;
+                g_pivots[g_pivot_count].is_high = is_pivot_high;
+                g_pivot_count++;
+            }
+        }
+    }
+    
+    // Ordenar pivotes por tiempo (más reciente primero)
+    if(g_pivot_count > 1)
+        SortPivotsByTime();
+    
+    return (g_pivot_count >= count);
+}
+
+// Función para detectar máximo local
+bool IsPivotHigh(const MqlRates &rates[], int index, int lookback)
+{
+    double current_high = rates[index].high;
+    
+    // Verificar que sea mayor que las velas anteriores y posteriores
+    for(int i = index - lookback; i <= index + lookback; i++)
+    {
+        if(i == index) continue;
+        if(rates[i].high >= current_high)
+            return false;
+    }
+    return true;
+}
+
+// Función para detectar mínimo local
+bool IsPivotLow(const MqlRates &rates[], int index, int lookback)
+{
+    double current_low = rates[index].low;
+    
+    // Verificar que sea menor que las velas anteriores y posteriores
+    for(int i = index - lookback; i <= index + lookback; i++)
+    {
+        if(i == index) continue;
+        if(rates[i].low <= current_low)
+            return false;
+    }
+    return true;
+}
+
+// Función para validar que el pivote tenga un cambio significativo
+bool IsSignificantPivot(const MqlRates &rates[], int index, int lookback, double min_change_percent)
+{
+    double pivot_price = rates[index].high > rates[index].low ? rates[index].high : rates[index].low;
+    
+    // Calcular el precio promedio en el período de lookback
+    double avg_price = 0;
+    for(int i = index - lookback; i <= index + lookback; i++)
+    {
+        avg_price += (rates[i].high + rates[i].low) / 2.0;
+    }
+    avg_price /= (lookback * 2 + 1);
+    
+    // Calcular el cambio porcentual
+    double change_percent = MathAbs(pivot_price - avg_price) / avg_price * 100.0;
+    
+    return change_percent >= min_change_percent;
+}
+
+// Función para ordenar pivotes por tiempo
+void SortPivotsByTime()
+{
+    for(int i = 0; i < g_pivot_count - 1; i++)
+    {
+        for(int j = i + 1; j < g_pivot_count; j++)
+        {
+            if(g_pivots[i].time < g_pivots[j].time)
+            {
+                PivotInfo temp = g_pivots[i];
+                g_pivots[i] = g_pivots[j];
+                g_pivots[j] = temp;
+            }
+        }
+    }
+}
+
+// Función mejorada con filtro de ruido adicional
+bool FindPivotsAdvanced(int count, int lookback_period = 5, double min_change_percent = 0.1, 
+                       double noise_filter = 0.0001)
+{
+    MqlRates rates[];
+    ArraySetAsSeries(rates, true);
+    int bars_needed = 200 + lookback_period * 2;
+    
+    if(CopyRates(_Symbol, _Period, 0, bars_needed, rates) < bars_needed) 
+        return false;
+    
+    ArrayResize(g_pivots, count * 2);
+    g_pivot_count = 0;
+    
+    PivotInfo temp_pivots[];
+    int temp_count = 0;
+    ArrayResize(temp_pivots, bars_needed);
+    
+    // Primera pasada: encontrar todos los pivotes candidatos
+    for(int i = lookback_period; i < bars_needed - lookback_period; i++)
+    {
+        bool is_pivot_high = IsPivotHigh(rates, i, lookback_period);
+        bool is_pivot_low = IsPivotLow(rates, i, lookback_period);
+        
+        if(is_pivot_high || is_pivot_low)
+        {
+            double pivot_price = is_pivot_high ? rates[i].high : rates[i].low;
+            
+            if(IsSignificantPivot(rates, i, lookback_period, min_change_percent))
+            {
+                temp_pivots[temp_count].price = pivot_price;
+                temp_pivots[temp_count].time = rates[i].time;
+                temp_pivots[temp_count].index = i;
+                temp_pivots[temp_count].is_high = is_pivot_high;
+                temp_count++;
+            }
+        }
+    }
+    
+    // Segunda pasada: filtrar pivotes muy cercanos (ruido)
+    for(int i = 0; i < temp_count && g_pivot_count < count; i++)
+    {
+        bool is_valid = true;
+        
+        // Verificar si hay pivotes muy cercanos en precio
+        for(int j = 0; j < g_pivot_count; j++)
+        {
+            double price_diff = MathAbs(temp_pivots[i].price - g_pivots[j].price);
+            if(price_diff < noise_filter * temp_pivots[i].price)
+            {
+                is_valid = false;
+                break;
+            }
+        }
+        
+        if(is_valid)
+        {
+            g_pivots[g_pivot_count] = temp_pivots[i];
+            g_pivot_count++;
+        }
+    }
+    
+    if(g_pivot_count > 1)
+        SortPivotsByTime();
+    
+    return (g_pivot_count >= count);
+}
+
+// Función para obtener información de un pivote específico
+bool GetPivotInfo(int pivot_index, double &price, datetime &time, bool &is_high)
+{
+    if(pivot_index < 0 || pivot_index >= g_pivot_count)
+        return false;
+    
+    price = g_pivots[pivot_index].price;
+    time = g_pivots[pivot_index].time;
+    is_high = g_pivots[pivot_index].is_high;
+    
+    return true;
+}
+
+// Función para obtener solo los máximos
+int GetPivotHighs(double &high_prices[], datetime &high_times[], int max_count)
+{
+    int high_count = 0;
+    ArrayResize(high_prices, max_count);
+    ArrayResize(high_times, max_count);
+    
+    for(int i = 0; i < g_pivot_count && high_count < max_count; i++)
+    {
+        if(g_pivots[i].is_high)
+        {
+            high_prices[high_count] = g_pivots[i].price;
+            high_times[high_count] = g_pivots[i].time;
+            high_count++;
+        }
+    }
+    
+    return high_count;
+}
+
+// Función para obtener solo los mínimos
+int GetPivotLows(double &low_prices[], datetime &low_times[], int max_count)
+{
+    int low_count = 0;
+    ArrayResize(low_prices, max_count);
+    ArrayResize(low_times, max_count);
+    
+    for(int i = 0; i < g_pivot_count && low_count < max_count; i++)
+    {
+        if(!g_pivots[i].is_high)
+        {
+            low_prices[low_count] = g_pivots[i].price;
+            low_times[low_count] = g_pivots[i].time;
+            low_count++;
+        }
+    }
+    
+    return low_count;
+}
