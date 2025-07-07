@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
-//|                                   EstrategiaLiquidezNY_v1.3.mq5 |
-//|                                  Creado para el usuario de GPT |
-//|                                             https://chat.openai.com |
+//|                                    EstrategiaLiquidezNY_v1.3.mq5 |
+//|                                         Creado por Julio Rosario |
+//|                                          https://www.jrcores.com |
 //+------------------------------------------------------------------+
-#property copyright "Creado para el usuario de GPT"
-#property link      "https://chat.openai.com"
+#property copyright "Creado por Julio Rosario"
+#property link      "https://www.jrcores.com"
 #property version   "1.3"
 #property strict
 
