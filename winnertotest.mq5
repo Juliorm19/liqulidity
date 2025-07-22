@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                     KevinDaveyStrategyEA_v2.mq5  |
-//|                      Optimizado por un Asistente AI              |
+//|                                     KevinDaveyStrategyEA_v2.1.mq5|
+//|                      Corregido por un Asistente AI               |
 //|                                                                  |
 //+------------------------------------------------------------------+
-#property copyright "Optimizado por un Asistente AI"
+#property copyright "Corregido por un Asistente AI"
 #property link      "https://www.google.com"
-#property version   "2.00"
-#property description "Versión optimizada del EA de Kevin Davey con filtros de horario, volatilidad (ATR) y trailing stop."
+#property version   "2.10"
+#property description "Versión optimizada del EA de Kevin Davey con filtros de horario, volatilidad (ATR) y trailing stop. Compilación corregida."
 
 #include <Trade\Trade.mqh>
 
@@ -25,12 +25,12 @@ enum ENUM_EXIT_STRATEGY_MODE
 
 //--- Parámetros de Entrada (Inputs)
 input group "Gestión de Riesgo y Magia"
-input long                MagicNumber          = 13580;              // Número Mágico del EA
+input long                MagicNumber          = 13581;              // Número Mágico del EA
 input ENUM_LOT_SIZE_MODE  LotSizeMode          = LOT_MODE_PERCENTAGE;  // Modo de cálculo de lote
 input double              FixedLotSize         = 0.01;               // Tamaño del lote si el modo es Fijo
 input double              RiskPercentage       = 1.0;                // Porcentaje de riesgo por operación
 input int                 Slippage             = 5;                  // Deslizamiento máximo en puntos
-input string              Comment              = "KevinDaveyEA_v2";  // Comentario para las órdenes
+input string              Comment              = "KevinDaveyEA_v2.1"; // Comentario para las órdenes
 
 input group "Filtros de Horario y Día"
 input bool                UseTimeFilter        = true;               // Habilitar filtro de horario?
@@ -57,10 +57,12 @@ input int                 RSI_Overbought_Level = 60;                 // Nivel de
 input int                 RSI_Oversold_Level   = 40;                 // Nivel de sobreventa del RSI
 input int                 SwingLookbackPeriod  = 15;                 // Período para buscar Swing High/Low
 
-input group "Estrategia de Salida"
+input group "Estrategia de Salida y Gestión"
 input ENUM_EXIT_STRATEGY_MODE ExitStrategyMode = EXIT_TRAILING_STOP_ATR; // Modo de estrategia de salida
 input double              RiskRewardRatio      = 2.0;                // Ratio R/R (si se usa TP Fijo)
 input double              TrailingStopAtrMultiplier = 2.5;           // Múltiplo de ATR para el Trailing Stop
+input bool                UseTimeExit          = false;              // Habilitar/deshabilitar la salida por tiempo
+input int                 MaxBarsOpen          = 100;                // Máximo de velas que una operación puede estar abierta
 
 //--- Instancia de la clase CTrade
 CTrade trade;
@@ -246,7 +248,7 @@ void ManageExits(long ticket)
      {
       ManageTrailingStop(ticket);
      }
-   // La gestión de salida por tiempo se mantiene igual
+   // La gestión de salida por tiempo se llama aquí
    ManageTimeExit(ticket);
   }
 
@@ -292,21 +294,18 @@ void ManageTrailingStop(long ticket)
 //+------------------------------------------------------------------+
 void ManageTimeExit(long ticket)
   {
-   if(!UseTimeExit) return;
+   if(!UseTimeExit) return; // Ahora esta variable existe y la función opera correctamente
    if(!PositionSelectByTicket(ticket)) return;
 
    ulong position_open_time = PositionGetInteger(POSITION_TIME);
    long position_open_bar = iBarShift(_Symbol, _Period, (datetime)position_open_time);
    long current_bar = iBarShift(_Symbol, _Period, TimeCurrent());
 
-   if(position_open_bar - current_bar >= MaxBarsOpen)
+   if(position_open_bar - current_bar >= MaxBarsOpen) // Esta variable también existe ahora
      {
       trade.PositionClose(ticket);
      }
   }
-
-//--- Las funciones de ayuda (CalculateLotSize, FindSwingLow/High, GetOpenPositionTicket) permanecen sin cambios ---
-//--- (Se omiten por brevedad, pero deben estar presentes en el archivo final. Pega el código completo) ---
 
 //+------------------------------------------------------------------+
 //| Calcula el tamaño del lote basado en el modo seleccionado        |
