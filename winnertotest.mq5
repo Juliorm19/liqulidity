@@ -1,80 +1,81 @@
 //+------------------------------------------------------------------+
-//|                                     KevinDavey_TrendFollower.mq5 |
-//|                      Copyright 2025, Asistente AI de Google      |
+//|                                          KevinDaveyStrategyEA.mq5|
+//|                      Creado por un Asistente AI para un Prompt   |
 //|                                                                  |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2025, Asistente AI de Google"
-#property link      ""
+#property copyright "Creado por un Asistente AI"
+#property link      "https://www.google.com"
 #property version   "1.00"
-#property description "EA basado en la estrategia de seguimiento de tendencia de Kevin Davey."
+#property description "Asesor Experto basado en la estrategia de seguimiento de tendencia de Kevin Davey."
 
 #include <Trade\Trade.mqh>
 
-//--- Parámetros de Entrada
-input group "EA Settings"
-input long                MagicNumber          = 123456;              // Número Mágico
-input string              Comment              = "KevinDavey_EA";       // Comentario para las órdenes
-input int                 Slippage             = 5;                   // Deslizamiento máximo en puntos
-
-input group "Position Sizing"
-enum LotSizeMode
+//--- Enumeración para el modo de tamaño de lote
+enum ENUM_LOT_SIZE_MODE
   {
-   Fixed_Lot,          // Lote Fijo
-   Risk_Percentage     // Riesgo Porcentual
+   LOT_MODE_FIXED,      // Lote Fijo
+   LOT_MODE_PERCENTAGE  // Riesgo Porcentual
   };
-input LotSizeMode         LotMode              = Risk_Percentage;     // Modo de cálculo de lote
-input double              FixedLotSize         = 0.01;                // Tamaño de lote fijo
-input double              RiskPercentage       = 1.0;                 // Porcentaje de riesgo por operación
 
-input group "Indicator Settings"
-input int                 SlowMA_Period        = 200;                 // Período SMA Lenta
-input int                 FastMA_Period        = 50;                  // Período SMA Rápida
-input int                 RSI_Period           = 14;                  // Período RSI
-input int                 RSI_Overbought_Level = 60;                   // Nivel de Sobrecompra RSI
-input int                 RSI_Oversold_Level   = 40;                   // Nivel de Sobreventa RSI
+//--- Parámetros de Entrada (Inputs)
+input group "Parámetros de Trading"
+input long                MagicNumber          = 13579;              // Número Mágico del EA
+input ENUM_LOT_SIZE_MODE  LotSizeMode          = LOT_MODE_PERCENTAGE;  // Modo de cálculo de lote
+input double              FixedLotSize         = 0.01;               // Tamaño del lote si el modo es Fijo
+input double              RiskPercentage       = 1.0;                // Porcentaje de riesgo por operación
+input double              RiskRewardRatio      = 2.0;                // Relación Riesgo/Recompensa para el TP
+input int                 Slippage             = 5;                  // Deslizamiento máximo en puntos
 
-input group "Exit Rules"
-input double              RiskRewardRatio      = 2.0;                 // Relación Riesgo/Recompensa
-input bool                UseTimeExit          = false;               // Habilitar/deshabilitar salida por tiempo
-input int                 MaxBarsOpen          = 100;                 // Máximo de velas que una operación puede estar abierta
+input group "Parámetros de Indicadores"
+input int                 SlowMA_Period        = 200;                // Período de la SMA lenta
+input int                 FastMA_Period        = 50;                 // Período de la SMA rápida
+input int                 RSI_Period           = 14;                 // Período del RSI
+input int                 RSI_Overbought_Level = 60;                 // Nivel de sobrecompra del RSI
+input int                 RSI_Oversold_Level   = 40;                 // Nivel de sobreventa del RSI
 
-//--- Instancia de la clase CTrade
+input group "Parámetros de Salida y Gestión"
+input int                 SwingLookbackPeriod  = 15;                 // Período para buscar Swing High/Low
+input bool                UseTimeExit          = false;              // Habilitar/deshabilitar la salida por tiempo
+input int                 MaxBarsOpen          = 100;                // Máximo de velas que una operación puede estar abierta
+input string              Comment              = "KevinDaveyEA";     // Comentario para las órdenes
+
+//--- Instancia de la clase CTrade para gestionar operaciones
 CTrade trade;
 
 //--- Handles de los indicadores
-int slow_ma_handle;
-int fast_ma_handle;
-int rsi_handle;
-
-//--- Variables globales para el gatillo de entrada
-bool buy_condition_met = false;
-double trigger_candle_high = 0;
-int buy_condition_bar_index = 0;
-
-bool sell_condition_met = false;
-double trigger_candle_low = 0;
-int sell_condition_bar_index = 0;
+int h_slowMA;
+int h_fastMA;
+int h_rsi;
 
 //+------------------------------------------------------------------+
-//| Función de inicialización del Experto                            |
+//| Función de inicialización del Asesor Experto                     |
 //+------------------------------------------------------------------+
 int OnInit()
   {
-//--- Inicializar CTrade
+//--- Inicializar el objeto de trading
    trade.SetExpertMagicNumber(MagicNumber);
-   trade.SetMarginMode();
    trade.SetTypeFillingBySymbol(_Symbol);
-   trade.SetSlippage(Slippage);
+   trade.SetDeviationInPoints(Slippage);
 
-//--- Crear handles de los indicadores
-   slow_ma_handle = iMA(_Symbol, _Period, SlowMA_Period, 0, MODE_SMA, PRICE_CLOSE);
-   fast_ma_handle = iMA(_Symbol, _Period, FastMA_Period, 0, MODE_SMA, PRICE_CLOSE);
-   rsi_handle = iRSI(_Symbol, _Period, RSI_Period, PRICE_CLOSE);
-
-//--- Verificar si los handles fueron creados correctamente
-   if(slow_ma_handle == INVALID_HANDLE || fast_ma_handle == INVALID_HANDLE || rsi_handle == INVALID_HANDLE)
+//--- Crear handles para los indicadores
+   h_slowMA = iMA(_Symbol, _Period, SlowMA_Period, 0, MODE_SMA, PRICE_CLOSE);
+   if(h_slowMA == INVALID_HANDLE)
      {
-      Print("Error al crear los handles de los indicadores. Código de error: ", GetLastError());
+      printf("Error creando el handle de la SMA Lenta. Código de error: %d", GetLastError());
+      return(INIT_FAILED);
+     }
+
+   h_fastMA = iMA(_Symbol, _Period, FastMA_Period, 0, MODE_SMA, PRICE_CLOSE);
+   if(h_fastMA == INVALID_HANDLE)
+     {
+      printf("Error creando el handle de la SMA Rápida. Código de error: %d", GetLastError());
+      return(INIT_FAILED);
+     }
+
+   h_rsi = iRSI(_Symbol, _Period, RSI_Period, PRICE_CLOSE);
+   if(h_rsi == INVALID_HANDLE)
+     {
+      printf("Error creando el handle del RSI. Código de error: %d", GetLastError());
       return(INIT_FAILED);
      }
 
@@ -83,315 +84,255 @@ int OnInit()
   }
 
 //+------------------------------------------------------------------+
-//| Función de desinicialización del Experto                         |
+//| Función de desinicialización del Asesor Experto                  |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-//--- Liberar handles de los indicadores
-   IndicatorRelease(slow_ma_handle);
-   IndicatorRelease(fast_ma_handle);
-   IndicatorRelease(rsi_handle);
+//--- Liberar los handles de los indicadores
+   IndicatorRelease(h_slowMA);
+   IndicatorRelease(h_fastMA);
+   IndicatorRelease(h_rsi);
   }
 
 //+------------------------------------------------------------------+
-//| Función de tick del Experto                                      |
+//| Función de tick del Asesor Experto                               |
 //+------------------------------------------------------------------+
 void OnTick()
   {
-//--- Usar OnBar() para lógica principal para evitar ejecuciones múltiples
+//--- Usamos un manejador de nueva barra para ejecutar la lógica solo una vez por vela
+   static datetime lastBarTime = 0;
+   datetime currentBarTime = (datetime)SeriesInfoInteger(_Symbol, _Period, SERIES_LASTBAR_DATE);
+
+   if(lastBarTime != currentBarTime)
+     {
+      lastBarTime = currentBarTime;
+      OnNewBar();
+     }
   }
 
 //+------------------------------------------------------------------+
-//| Función de nueva barra                                           |
+//| Lógica principal que se ejecuta en cada nueva barra              |
 //+------------------------------------------------------------------+
-void OnNewBar(const int-1)
+void OnNewBar()
   {
-//--- Asegurarse de que no hay posiciones abiertas para este símbolo
-   if(PositionsTotal() > 0)
+//--- Asegurarse de que hay suficientes barras para los cálculos
+   if(Bars(_Symbol, _Period) < SlowMA_Period + 5)
      {
-      // Lógica de salida por tiempo
-      if(UseTimeExit)
-        {
-         CheckTimeExit();
-        }
       return;
      }
 
-//--- Obtener datos de precios e indicadores
+//--- Comprobar si ya hay una posición abierta por este EA en este símbolo
+   if(PositionSelectByTicket(GetOpenPositionTicket()))
+     {
+      // Si hay una posición, gestionar la salida por tiempo si está activada
+      ManageTimeExit();
+      return; // No buscar nuevas entradas si ya hay una posición
+     }
+
+//--- No hay posiciones abiertas, buscar una nueva señal de entrada
+   CheckForEntrySignal();
+  }
+
+//+------------------------------------------------------------------+
+//| Verifica las condiciones de entrada para compra y venta          |
+//+------------------------------------------------------------------+
+void CheckForEntrySignal()
+  {
+//--- Obtener los datos de precios e indicadores necesarios
    MqlRates rates[];
-   if(CopyRates(_Symbol, _Period, 0, 3, rates) < 3)
+   if(CopyRates(_Symbol, _Period, 0, 3, rates) < 3) return; // Necesitamos 3 barras para la lógica
+
+   double sma_slow_buffer[3];
+   double sma_fast_buffer[3];
+   double rsi_buffer[3];
+
+   if(CopyBuffer(h_slowMA, 0, 0, 3, sma_slow_buffer) < 3) return;
+   if(CopyBuffer(h_fastMA, 0, 0, 3, sma_fast_buffer) < 3) return;
+   if(CopyBuffer(h_rsi, 0, 0, 3, rsi_buffer) < 3) return;
+
+//--- La lógica se basa en barras completadas.
+//--- rates[2] es la "vela de condición"
+//--- rates[1] es la "vela de gatillo"
+//--- rates[0] es la barra actual en formación
+
+//--- Verificar condiciones de COMPRA
+   bool isUptrend = rates[2].close > sma_slow_buffer[2];
+   bool isRetracement = rates[2].low <= sma_fast_buffer[2];
+   bool isOversold = rsi_buffer[2] <= RSI_Oversold_Level;
+   bool isTriggerCandleBullish = rates[1].close > rates[1].open;
+   bool isTriggerFired = rates[1].close > rates[2].high;
+
+   if(isUptrend && isRetracement && isOversold && isTriggerCandleBullish && isTriggerFired)
      {
-      Print("No hay suficientes barras para operar.");
-      return;
-     }
+      //--- Condiciones de compra cumplidas, proceder a abrir la orden
+      double entry_price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double stop_loss = FindSwingLow(SwingLookbackPeriod);
+      if(stop_loss == 0) return; // No se pudo encontrar un SL válido
 
-   double slow_ma[], fast_ma[], rsi[];
-   if(CopyBuffer(slow_ma_handle, 0, 0, 3, slow_ma) < 3 ||
-      CopyBuffer(fast_ma_handle, 0, 0, 3, fast_ma) < 3 ||
-      CopyBuffer(rsi_handle, 0, 0, 3, rsi) < 3)
-     {
-      Print("Error al copiar los datos de los indicadores.");
-      return;
-     }
+      double risk_pips = (entry_price - stop_loss) / _Point;
+      if(risk_pips <= 0) return; // Riesgo inválido
 
-//--- El índice [1] es la última vela completa, el [0] es la actual
-   double current_close = rates[1].close;
-   double prev_close = rates[2].close;
-   double current_slow_ma = slow_ma[1];
-   double current_fast_ma = fast_ma[1];
-   double current_rsi = rsi[1];
+      double take_profit = entry_price + (risk_pips * RiskRewardRatio * _Point);
+      double lot_size = CalculateLotSize(stop_loss, entry_price);
 
-//--- Lógica de tendencia
-   bool is_uptrend = current_close > current_slow_ma;
-   bool is_downtrend = current_close < current_slow_ma;
-
-//--- Resetear condiciones si la tendencia cambia
-   if(!is_uptrend) buy_condition_met = false;
-   if(!is_downtrend) sell_condition_met = false;
-
-//--- Verificar condiciones de entrada
-   if(is_uptrend)
-     {
-      CheckBuyConditions(rates, current_fast_ma, current_rsi);
-      CheckBuyTrigger(rates);
-     }
-
-   if(is_downtrend)
-     {
-      CheckSellConditions(rates, current_fast_ma, current_rsi);
-      CheckSellTrigger(rates);
-     }
-  }
-
-//+------------------------------------------------------------------+
-//| Verifica las condiciones iniciales para una compra               |
-//+------------------------------------------------------------------+
-void CheckBuyConditions(const MqlRates &rates[], double fast_ma, double rsi)
-  {
-   // rates[1] es la última vela cerrada
-   if(rates[1].close <= fast_ma && rates[1].open > fast_ma && rsi <= RSI_Oversold_Level)
-     {
-      buy_condition_met = true;
-      trigger_candle_high = rates[1].high;
-      buy_condition_bar_index = (int)rates[1].tick_volume; // Usamos un identificador de la barra
-      Print("Condición de compra cumplida. Esperando gatillo...");
-     }
-  }
-
-//+------------------------------------------------------------------+
-//| Verifica el gatillo de entrada para una compra                   |
-//+------------------------------------------------------------------+
-void CheckBuyTrigger(const MqlRates &rates[])
-  {
-   if(buy_condition_met && rates[1].close > trigger_candle_high)
-     {
-      double stop_loss = CalculateStopLoss(true);
-      if(stop_loss == 0) return;
-
-      double lot_size = CalculateLotSize(stop_loss, rates[1].close);
-      if(lot_size <= 0) return;
-
-      double take_profit = CalculateTakeProfit(rates[1].close, stop_loss, true);
-
-      if(trade.Buy(lot_size, _Symbol, rates[1].close, stop_loss, take_profit, Comment))
+      if(lot_size > 0)
         {
-         Print("Orden de compra ejecutada: ", trade.ResultDeal());
+         trade.Buy(lot_size, _Symbol, entry_price, stop_loss, take_profit, Comment);
         }
-      else
-        {
-         Print("Error al ejecutar orden de compra: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
-        }
-      buy_condition_met = false; // Resetear
+      return; // Salir después de intentar abrir una orden
      }
-  }
 
-//+------------------------------------------------------------------+
-//| Verifica las condiciones iniciales para una venta                |
-//+------------------------------------------------------------------+
-void CheckSellConditions(const MqlRates &rates[], double fast_ma, double rsi)
-  {
-   if(rates[1].close >= fast_ma && rates[1].open < fast_ma && rsi >= RSI_Overbought_Level)
+//--- Verificar condiciones de VENTA
+   bool isDowntrend = rates[2].close < sma_slow_buffer[2];
+   bool isPullback = rates[2].high >= sma_fast_buffer[2];
+   bool isOverbought = rsi_buffer[2] >= RSI_Overbought_Level;
+   bool isTriggerCandleBearish = rates[1].close < rates[1].open;
+   bool isSellTriggerFired = rates[1].close < rates[2].low;
+
+   if(isDowntrend && isPullback && isOverbought && isTriggerCandleBearish && isSellTriggerFired)
      {
-      sell_condition_met = true;
-      trigger_candle_low = rates[1].low;
-      sell_condition_bar_index = (int)rates[1].tick_volume;
-      Print("Condición de venta cumplida. Esperando gatillo...");
+      //--- Condiciones de venta cumplidas, proceder a abrir la orden
+      double entry_price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double stop_loss = FindSwingHigh(SwingLookbackPeriod);
+      if(stop_loss == 0) return; // No se pudo encontrar un SL válido
+
+      double risk_pips = (stop_loss - entry_price) / _Point;
+      if(risk_pips <= 0) return; // Riesgo inválido
+
+      double take_profit = entry_price - (risk_pips * RiskRewardRatio * _Point);
+      double lot_size = CalculateLotSize(stop_loss, entry_price);
+
+      if(lot_size > 0)
+        {
+         trade.Sell(lot_size, _Symbol, entry_price, stop_loss, take_profit, Comment);
+        }
+      return; // Salir después de intentar abrir una orden
      }
   }
 
 //+------------------------------------------------------------------+
-//| Verifica el gatillo de entrada para una venta                    |
+//| Calcula el tamaño del lote basado en el modo seleccionado        |
 //+------------------------------------------------------------------+
-void CheckSellTrigger(const MqlRates &rates[])
+double CalculateLotSize(double stop_loss_price, double entry_price)
   {
-   if(sell_condition_met && rates[1].close < trigger_candle_low)
-     {
-      double stop_loss = CalculateStopLoss(false);
-      if(stop_loss == 0) return;
-
-      double lot_size = CalculateLotSize(stop_loss, rates[1].close);
-      if(lot_size <= 0) return;
-
-      double take_profit = CalculateTakeProfit(rates[1].close, stop_loss, false);
-
-      if(trade.Sell(lot_size, _Symbol, rates[1].close, stop_loss, take_profit, Comment))
-        {
-         Print("Orden de venta ejecutada: ", trade.ResultDeal());
-        }
-      else
-        {
-         Print("Error al ejecutar orden de venta: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
-        }
-      sell_condition_met = false; // Resetear
-     }
-  }
-
-
-//+------------------------------------------------------------------+
-//| Calcula el tamaño del lote                                       |
-//+------------------------------------------------------------------+
-double CalculateLotSize(double sl_price, double entry_price)
-  {
-   if(LotMode == Fixed_Lot)
+   if(LotSizeMode == LOT_MODE_FIXED)
      {
       return(FixedLotSize);
      }
 
-   // Cálculo basado en el riesgo porcentual
-   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   //--- Cálculo por Riesgo Porcentual
+   double lot_size = 0.0;
+   double account_balance = AccountInfoDouble(ACCOUNT_EQUITY);
    double risk_amount = account_balance * (RiskPercentage / 100.0);
-   double sl_pips = MathAbs(entry_price - sl_price);
-   
-   // Si el SL es 0, no podemos calcular el lote
-   if(sl_pips == 0)
-   {
-    Print("Distancia de Stop Loss es cero. No se puede calcular el tamaño del lote.");
-    return 0.0;
-   }
-
-   // Obtener el valor del tick y el tamaño del tick
+   double risk_per_lot = 0.0;
    double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
 
-   if(tick_value <= 0 || tick_size <= 0)
-   {
-      Print("Valores de símbolo inválidos para el cálculo del lote (Tick Value/Tick Size).");
-      return 0.0;
-   }
-   
-   double lot_size = (risk_amount / sl_pips) * tick_size / tick_value;
+   if(tick_size == 0 || tick_value == 0) return 0.0;
 
-   // Normalizar y verificar límites del lote
-   double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double points_at_risk = MathAbs(entry_price - stop_loss_price);
+   risk_per_lot = points_at_risk / tick_size * tick_value;
 
-   lot_size = MathFloor(lot_size / lot_step) * lot_step;
+   if(risk_per_lot > 0)
+     {
+      lot_size = risk_amount / risk_per_lot;
+     }
 
-   if(lot_size < min_lot) lot_size = min_lot;
-   if(lot_size > max_lot) lot_size = max_lot;
+   //--- Normalizar el tamaño del lote
+   double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   lot_size = MathFloor(lot_size / volume_step) * volume_step;
+
+   //--- Validar contra los límites de volumen
+   double min_volume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double max_volume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+
+   if(lot_size < min_volume) lot_size = min_volume;
+   if(lot_size > max_volume) lot_size = max_volume;
 
    return(lot_size);
   }
 
 //+------------------------------------------------------------------+
-//| Calcula el precio del Stop Loss                                  |
+//| Encuentra el mínimo más bajo (swing low) en un período           |
 //+------------------------------------------------------------------+
-double CalculateStopLoss(bool is_buy)
+double FindSwingLow(int lookback_period)
   {
    MqlRates rates[];
-   // Buscar el último swing low/high en las últimas 50 velas
-   if(CopyRates(_Symbol, _Period, 0, 50, rates) < 50)
+   if(CopyRates(_Symbol, _Period, 1, lookback_period, rates) < lookback_period)
      {
-      Print("No hay suficientes barras para calcular el SL.");
-      return 0.0;
+      return 0.0; // No hay suficientes datos
      }
 
-   if(is_buy) // Para compra, buscar el último swing low
+   double swing_low = rates[0].low;
+   for(int i = 1; i < lookback_period; i++)
      {
-      double swing_low = rates[1].low;
-      for(int i = 2; i < 50; i++)
+      if(rates[i].low < swing_low)
         {
-         // Simple swing low: una vela con un mínimo más bajo que las velas adyacentes
-         if(rates[i].low < rates[i-1].low && rates[i].low < rates[i+1].low)
-           {
-            swing_low = rates[i].low;
-            break;
-           }
+         swing_low = rates[i].low;
         }
-      return(swing_low - _Point * 10); // Añadir un pequeño buffer
      }
-   else // Para venta, buscar el último swing high
-     {
-      double swing_high = rates[1].high;
-      for(int i = 2; i < 50; i++)
-        {
-         // Simple swing high: una vela con un máximo más alto que las velas adyacentes
-         if(rates[i].high > rates[i-1].high && rates[i].high > rates[i+1].high)
-           {
-            swing_high = rates[i].high;
-            break;
-           }
-        }
-      return(swing_high + _Point * 10); // Añadir un pequeño buffer
-     }
+   return swing_low;
   }
 
 //+------------------------------------------------------------------+
-//| Calcula el precio del Take Profit                                |
+//| Encuentra el máximo más alto (swing high) en un período          |
 //+------------------------------------------------------------------+
-double CalculateTakeProfit(double entry_price, double sl_price, bool is_buy)
+double FindSwingHigh(int lookback_period)
   {
-   if(RiskRewardRatio <= 0)
+   MqlRates rates[];
+   if(CopyRates(_Symbol, _Period, 1, lookback_period, rates) < lookback_period)
      {
-      return 0.0; // TP no se usa
+      return 0.0; // No hay suficientes datos
      }
 
-   double risk_distance = MathAbs(entry_price - sl_price);
-
-   if(is_buy)
+   double swing_high = rates[0].high;
+   for(int i = 1; i < lookback_period; i++)
      {
-      return(entry_price + risk_distance * RiskRewardRatio);
+      if(rates[i].high > swing_high)
+        {
+         swing_high = rates[i].high;
+        }
      }
-   else
+   return swing_high;
+  }
+
+//+------------------------------------------------------------------+
+//| Gestiona la salida por tiempo si está activada                   |
+//+------------------------------------------------------------------+
+void ManageTimeExit()
+  {
+   if(!UseTimeExit) return;
+
+   long position_ticket = GetOpenPositionTicket();
+   if(position_ticket > 0)
      {
-      return(entry_price - risk_distance * RiskRewardRatio);
+      ulong position_open_time = PositionGetInteger(POSITION_TIME);
+      long position_open_bar = iBarShift(_Symbol, _Period, (datetime)position_open_time);
+      long current_bar = iBarShift(_Symbol, _Period, TimeCurrent());
+
+      if(position_open_bar - current_bar >= MaxBarsOpen)
+        {
+         // Cerrar la posición
+         trade.PositionClose(position_ticket);
+        }
      }
   }
 
 //+------------------------------------------------------------------+
-//| Cierra la posición si ha estado abierta demasiado tiempo         |
+//| Obtiene el ticket de la primera posición abierta por este EA     |
 //+------------------------------------------------------------------+
-void CheckTimeExit()
+long GetOpenPositionTicket()
   {
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      if(PositionSelect(_Symbol))
+      if(PositionGetSymbol(i) == _Symbol)
         {
          if(PositionGetInteger(POSITION_MAGIC) == MagicNumber)
            {
-            long open_time = PositionGetInteger(POSITION_TIME);
-            MqlDateTime open_dt;
-            TimeToStruct(open_time, open_dt);
-
-            MqlRates rates[];
-            if(CopyRates(_Symbol, _Period, 0, MaxBarsOpen + 1, rates) > MaxBarsOpen)
-              {
-               long bars_open = Bars(_Symbol, _Period, open_time, TimeCurrent());
-               if(bars_open >= MaxBarsOpen)
-                 {
-                  if(trade.PositionClose(_Symbol))
-                    {
-                     Print("Posición cerrada por tiempo. Abierta por ", bars_open, " barras.");
-                    }
-                  else
-                    {
-                     Print("Error al cerrar posición por tiempo: ", trade.ResultRetcodeDescription());
-                    }
-                 }
-              }
+            return PositionGetInteger(POSITION_TICKET);
            }
         }
      }
+   return 0;
   }
 //+------------------------------------------------------------------+
