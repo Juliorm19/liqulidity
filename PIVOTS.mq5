@@ -5,7 +5,6 @@ struct PivotInfo
     datetime time;
     int index;
     bool is_high;  // true para máximo, false para mínimo
-};
 
 // Arrays globales para almacenar pivotes
 PivotInfo g_pivots[];
